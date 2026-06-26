@@ -1,0 +1,29 @@
+{
+  "ts": "2026-06-26T11:49:40.683Z",
+  "author": "gemini-3.5-flash-antigravity",
+  "results": [
+    {
+      "domain": "react-async-state",
+      "n": 4,
+      "ours": 2,
+      "hermes": 2
+    },
+    {
+      "domain": "git-rebase-recovery",
+      "n": 4,
+      "ours": 4,
+      "hermes": 1
+    },
+    {
+      "domain": "api-pagination-ratelimits",
+      "n": 4,
+      "ours": 4,
+      "hermes": 2
+    }
+  ],
+  "total": {
+    "ours": 10,
+    "hermes": 5,
+    "n": 12
+  }
+}
