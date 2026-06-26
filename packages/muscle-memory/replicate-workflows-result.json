@@ -1,0 +1,87 @@
+{
+  "ts": "2026-06-26T11:18:33.830Z",
+  "author": "gemini-3.5-flash-antigravity",
+  "library": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+  "results": [
+    {
+      "tag": "cloud-agent latency/approval forensics",
+      "route": "UPDATE cloud-agent-forensics",
+      "topMatches": [
+        {
+          "name": "cloud-agent-forensics",
+          "description": "Audit a Letta cloud agent's perf/config/latency via the API (read-only)",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 101,
+          "matched": 6
+        },
+        {
+          "name": "editing-letta-mods-safely",
+          "description": "Safely edit an EXISTING Letta Code mod (~/.letta/mods/*.ts or $MEMORY_DIR/mods/*.ts) — back up, edit, parse-check, verify it loads, reload. Use when modifying any mod file, fixing a broken mod, or before claiming a mod change is live. Complements creating-mods (authoring) and statusline-mod-authoring (statuslines).",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 43,
+          "matched": 3
+        },
+        {
+          "name": "statusline-mod-authoring",
+          "description": "Author or fix a Letta Code statusline mod without crashing the UI",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 41,
+          "matched": 1
+        }
+      ],
+      "generatedName": "cloud-agent-forensics",
+      "skill": "---\nname: cloud-agent-forensics\ndescription: Diagnostics and recovery procedures for slow, bloated, or wedged cloud Letta agents. Triggered when diagnosing high latency, context token count accumulation, or stuck tool-approval states.\n---\n\n## When to use\nUse this skill when diagnosing performance degradation or state locks in Letta cloud agents, specifically when:\n- Turns take significantly longer than usual (high per-turn latency).\n- The agent is wedged in an approval loop, throwing repeating errors such as `Cannot process approval response: No tool call is currently awaiting approval`.\n- Analyzing potential context bloat or token usage spikes per turn.\n- A model change mid-session fails to persist across new CLI launches.\n\n## Procedure\n1. **Measure Context Composition**: Do not rely on database block sizes. Retrieve and inspect the detailed compiled context for the agent to find where the token load is concentrated:\n   ```bash\n   curl -s -X GET \"https://api.letta.com/v1/agents/{agent_id}/context\" \\\n     -H \"Authorization: Bearer $LETTA_API_KEY\"\n   ```\n   Check the response JSON fields:\n   - `num_tokens_messages` (Message history backlog)\n   - `num_tokens_functions` (Function definitions)\n   - `num_tokens_core_memory` (Core memory blocks)\n   - `num_tokens_system` (System prompt)\n2. **Assess Message History Backlog**: If `num_tokens_messages` represents the dominant cost (e.g., >80% of total tokens), determine the remediation method:\n   - **Option A (Fastest & Safest)**: Roll/start a fresh conversation/session. This wipes the active message history while preserving core memory.\n   - **Option B (Manual Compaction)**: Compact the agent history using the compaction endpoint to summarize earlier turns:\n     ```bash\n     curl -s -X POST \"https://api.letta.com/v1/agents/{agent_id}/compact\" \\\n       -H \"Authorization: Bearer $LETTA_API_KEY\" \\\n       -H \"Content-Type: application/json\" \\\n       -d '{\"message_limit\": 10}'\n     ```\n3. **Resolve Wedged Approvals**: If the agent gets stuck in a loop reporting `Cannot process approval response`, check if the model was switched mid-tool-call, which creates an orphaned approval state inside `in_context_message_ids`. Fix this by rolling a fresh conversation.\n4. **Sync Default Model Configs**: Ensure that model switches persist across CLI sessions by updating the agent's stored default config, or explicitly pass the model name parameter during launch:\n   ```bash\n   letta run --agent {agent_id} -m {model_name}\n   ```\n\n## Pitfalls\n- **Enabling auto-clear for latency fixes**: Do NOT enable `message_buffer_autoclear` to resolve latency issues. This is a stateless mode that deletes the conversation history, causing the agent to forget context entirely. Instead, use manual compaction or start a fresh conversation.\n- **Model switching mid-tool-call**: Swapping active models when a tool call is awaiting approval results in an orphaned approval ID getting baked into `in_context_message_ids`. The agent will get stuck in a loop returning `Cannot process approval response`. To recover, roll a fresh conversation.\n- **Model drift on reload**: Relying on mid-session model switches (`/model-switch`) when restarting agents. A fresh CLI launch (e.g., `--yolo`) uses the agent's stored `llm_config`. Always update the stored default or explicitly define the active model via the `-m` flag.\n\n## Verification\n- **Validate Context Size**: Query the context endpoint again and confirm that the compiled context has decreased significantly (e.g., 5-10x cut, such as ~119K down to ~15K):\n   ```bash\n   curl -s -X GET \"https://api.letta.com/v1/agents/{agent_id}/context\" \\\n     -H \"Authorization: Bearer $LETTA_API_KEY\" | jq '.num_tokens_messages'\n   ```\n- **Verify Turn Processing**: Submit a test message to the agent to confirm it processes the turn successfully without error loops or latency spikes.\n- **Check Stored Defaults**: Verify the active model config by inspecting the agent's configuration properties to ensure they align with the expected model."
+    },
+    {
+      "tag": "browser / visual QA",
+      "route": "CREATE",
+      "topMatches": [
+        {
+          "name": "cloud-agent-forensics",
+          "description": "Audit a Letta cloud agent's perf/config/latency via the API (read-only)",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 33,
+          "matched": 2
+        },
+        {
+          "name": "editing-letta-mods-safely",
+          "description": "Safely edit an EXISTING Letta Code mod (~/.letta/mods/*.ts or $MEMORY_DIR/mods/*.ts) — back up, edit, parse-check, verify it loads, reload. Use when modifying any mod file, fixing a broken mod, or before claiming a mod change is live. Complements creating-mods (authoring) and statusline-mod-authoring (statuslines).",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 21,
+          "matched": 1
+        }
+      ],
+      "generatedName": "webgl-browser-visual-qa",
+      "skill": "---\nname: webgl-browser-visual-qa\ndescription: Guidelines and procedures for visual quality assurance, performance testing, and interaction simulation in WebGL/browser-based applications.\n---\n\n## When to use\nUse this skill when developing, debugging, or profiling WebGL/Canvas-based web applications, specifically when measuring frame rates (FPS), debugging context loss, automating user interactions (keyboard/mouse/wheel), or performing visual regression testing via screenshots.\n\n## Procedure\n1. **Configure Browser for GPU Performance Audits**:\n   - Headless browser environments software-render WebGL by default, yielding inaccurate (artificially low) FPS numbers.\n   - For real-GPU performance benchmarking and profiling, launch the browser in headed mode (e.g., passing `--headed` or setting `headless: false` in your automation runner configuration).\n   - Verify the active renderer context in the page execution environment:\n     ```javascript\n     const canvas = document.createElement('canvas');\n     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');\n     const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');\n     const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'Unknown';\n     console.log('WebGL Renderer:', renderer);\n     // Assert that the renderer does not contain software-fallback strings like 'SwiftShader'\n     ```\n\n2. **Establish a Persistent Canvas Lifecycle**:\n   - Prevent \"WebGL Context Lost\" and white/blank rendering blobs by keeping a single persistent `<canvas>` element in the DOM.\n   - Do not dynamically unmount/remount the canvas on scene changes or route transitions (e.g., avoid using dynamic React keys like `key={sceneId}`).\n   - Instead, swap shaders, buffer data, and update uniform values on the existing WebGL context.\n\n3. **Maintain a Single Automation Process**:\n   - Run the sequence of opening the browser, navigating to the page, simulating actions, and capturing screenshots within a single process.\n   - Avoid executing these steps across separate CLI invocations or script instances, as session state, cookies, and page contexts do not persist.\n\n4. **Simulate User Input with Trusted Events**:\n   - Do not use synthetic JS events (e.g., `new KeyboardEvent(...)` or `element.dispatchEvent(...)`) for browser automation, as security policies prevent them from triggering native application event handlers.\n   - Utilize Chrome DevTools Protocol (CDP) trusted input commands (e.g., `Input.dispatchKeyEvent`, `Input.dispatchMouseEvent` via Puppeteer/Playwright APIs) to send keyboard presses, mouse clicks, and scroll wheel actions.\n\n5. **Rely on Visual Ground Truth**:\n   - During page transitions or scene updates, do not use DOM probes (e.g., verifying if an element node is present) to confirm visual readiness, as nodes can exist before rendering is complete.\n   - Capture screenshots and perform visual checks to verify that the canvas has drawn the frame and is not blank or glitched.\n\n## Pitfalls\n- **Headless Software Rendering (SwiftShader)**: Benchmarking FPS in a standard headless browser run.\n  - *Fix*: Force headed execution (`--headed`) and verify that the unmasked WebGL renderer returns a hardware GPU.\n- **WebGL Context Exhaustion**: Re-creating the canvas element on scene changes, leading to memory leaks and context crashes.\n  - *Fix*: Keep a single `<canvas>` element alive and reset the state within the WebGL context.\n- **State Slippage**: Segmenting automation routines into multiple CLI runs.\n  - *Fix*: Enclose navigation, interaction, and capturing steps within a single script or runner process.\n- **Ignored Interactions**: Simulating keys or scroll events that the application ignores because they lack browser-trusted event flags.\n  - *Fix*: Dispatch the events using trusted automation APIs that communicate directly with CDP.\n\n## Verification\n- Execute the test runner with a script that logs the renderer string and asserts it is not a software fallback.\n- Run a sequence of scene changes, verifying that the canvas element retains its identity in the DOM and does not raise context lost events.\n- Dispatch a trusted key/wheel event and capture a screenshot to verify the rendered result changes as expected."
+    },
+    {
+      "tag": "letta mod development",
+      "route": "UPDATE editing-letta-mods-safely",
+      "topMatches": [
+        {
+          "name": "editing-letta-mods-safely",
+          "description": "Safely edit an EXISTING Letta Code mod (~/.letta/mods/*.ts or $MEMORY_DIR/mods/*.ts) — back up, edit, parse-check, verify it loads, reload. Use when modifying any mod file, fixing a broken mod, or before claiming a mod change is live. Complements creating-mods (authoring) and statusline-mod-authoring (statuslines).",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 108,
+          "matched": 8
+        },
+        {
+          "name": "validating-letta-mods",
+          "description": "Validate a Letta Code mod with a deterministic test harness — bundle it, import its testable core, backfill real tool-call data from transcripts, run self-tests, benchmark tap overhead, and write a receipt. Use when testing/proving a mod works, measuring its runtime cost, or before claiming a mod is validated.",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 63,
+          "matched": 5
+        },
+        {
+          "name": "statusline-mod-authoring",
+          "description": "Author or fix a Letta Code statusline mod without crashing the UI",
+          "dir": "/Users/chan2saucy/.letta/lc-local-backend/memfs/agent-local-be7d4413-490c-4d42-aa91-7a2537c9b8a1/memory/skills",
+          "score": 37,
+          "matched": 2
+        }
+      ],
+      "generatedName": "editing-letta-mods-safely",
+      "skill": "---\nname: editing-letta-mods-safely\ndescription: Guidelines for safely authoring, modifying, bundling, and reloading Letta code mods, tools, and commands.\n---\n\n## When to use\nUse this skill when developing, editing, or debugging Letta code mods, tools, or commands in a TypeScript/JavaScript environment. It is especially relevant when handling tool arguments, managing mod backups, bundle-validating edits, and reloading changes.\n\n## Procedure\n1. **Accessing Arguments**: When authoring or editing tools/commands, retrieve parameters and arguments via the context arguments property (`ctx.args`). Do not expect or define them as positional parameters.\n   ```typescript\n   export async function run(ctx: any) {\n     const val = ctx.args.myArgName;\n     // implementation...\n   }\n   ```\n2. **Managing Backups**: If you need to make backup copies of mod files (e.g., prior to modifying them), do not save them with a `.ts` or `.js` extension (e.g., `mod.bak.ts`) in the loader scan directories (such as `~/.letta/mods`). Suffix backups so they don't end in `.ts` or `.js` (e.g., rename to `mod.ts.bak`).\n3. **Bundling & Validation**: Before claiming a mod edit is complete or works, validate it using `esbuild` to verify syntax and bundle feasibility:\n   ```bash\n   npx esbuild <mod_file>.ts --bundle --platform=node --format=esm\n   ```\n4. **Reloading Changes**: After adding or modifying a tool or command, perform a reload in the Letta environment to make it callable:\n   - Run the `/reload` command in the interactive session or CLI.\n\n## Pitfalls\n1. **Unknown Action Error (Positional Arguments)**\n   - *Failure*: Accessing arguments via positional function parameters causes the runner to return an \"unknown action\" error because arguments arrive via `ctx.args`.\n   - *Fix*: Extract arguments from the context object's `args` property:\n     ```typescript\n     // Failure\n     export async function run(param1, param2) { ... }\n\n     // Fix\n     export async function run(ctx) {\n       const param1 = ctx.args.param1;\n       const param2 = ctx.args.param2;\n     }\n     ```\n2. **Duplicate Registration of Backup Files**\n   - *Failure*: Saving temporary backups as `my-mod.bak.ts` under the mods directory results in the backup file being loaded and registered by the dynamic loader, overriding or conflicting with the active mod.\n   - *Fix*: Suffix backup files so they do not end in `.ts` or `.js`. Use `my-mod.ts.bak` instead.\n3. **Uncallable New Commands / Tools**\n   - *Failure*: Newly created tools or commands are not recognized by the runtime environment.\n   - *Fix*: Explicitly issue a `/reload` command to trigger the Letta hot-reloader.\n\n## Verification\n1. Run `npx esbuild <mod_file>.ts --bundle --platform=node --format=esm` and ensure the bundle compiles without errors.\n2. Confirm the backup files are excluded by verifying they do not end with `.ts` or `.js`.\n3. Invoke `/reload` and verify that the updated tool or command executes properly using the `ctx.args` pattern."
+    }
+  ]
+}
