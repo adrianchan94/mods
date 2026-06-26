@@ -1102,6 +1102,7 @@ export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
     case "reviewing": return [`💾 muscle-memory · 🔍 reviewing ${state.detail || "evidence…"}`];
     case "routing": return [`💾 muscle-memory · 🧭 ${state.route || "routing…"}`];
     case "writing": return [`💾 muscle-memory · ✍️  writing ${state.skill ? `'${state.skill}'` : "skill"}…`];
+    case "protected": return [`💾 muscle-memory · 🛡️  ${state.last || "blocked unsafe content (safe)"}`];
     case "blocked": return [`💾 muscle-memory · ⚠️  ${state.last || "blocked"}`];
     default: return [`💾 muscle-memory · ${state.last || "ready"}`]; // done/idle: the finished action
   }
@@ -1174,7 +1175,11 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
       return { ...res, wrote: join(dir, res.name) };
     } catch (e: any) { appendUiEvent({ phase: "reflect_error", summary: `write failed: ${String(e?.message ?? e).slice(0, 80)}` }); return { ...res, reason: String(e?.message ?? e) }; }
   }
-  if (res.action === "reject") { appendUiEvent({ phase: "reflect_error", summary: `review rejected: ${res.reason}` }); writeUiState({ phase: "blocked", last: `rejected: ${res.reason}` }); }
+  if (res.action === "reject") {
+    const safe = /\bsecurity:/i.test(res.reason || ""); // a security block is the gate PROTECTING you, not a failure
+    appendUiEvent({ phase: safe ? "blocked_unsafe" : "reflect_error", summary: safe ? `🛡️ blocked unsafe content (safe): ${res.reason}` : `review rejected: ${res.reason}` });
+    writeUiState({ phase: safe ? "protected" : "blocked", last: safe ? "blocked unsafe content (safe)" : `rejected: ${res.reason}` });
+  }
   else { appendUiEvent({ phase: "reflect_none", summary: "nothing durable to save" }); writeUiState({ phase: "idle", last: "nothing to save" }); }
   return res;
 }

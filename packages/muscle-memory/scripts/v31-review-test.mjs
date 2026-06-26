@@ -150,6 +150,7 @@ ok("panel shows 'watching' when reflect on (idle)", M.renderMuscleMemoryPanel({}
 const doneLines = M.renderMuscleMemoryPanel({ phase: "done", last: "updated editing-letta-mods-safely", route: "UPDATE · staged" });
 ok("panel uses FULL 'muscle-memory' branding (never abbreviated 'MM')", doneLines[0].includes("💾 muscle-memory") && !doneLines.join("\n").includes("💾 MM "));
 ok("panel LIVE-mirrors skill-dev phases (reviewing/routing/writing)", M.renderMuscleMemoryPanel({ phase: "reviewing", detail: "3 sessions" })[0].includes("🔍") && M.renderMuscleMemoryPanel({ phase: "routing", route: "UPDATE → x" })[0].includes("🧭") && M.renderMuscleMemoryPanel({ phase: "writing", skill: "x" })[0].includes("✍️"));
+ok("panel: security block renders as 🛡️ safe, not ⚠️ error", M.renderMuscleMemoryPanel({ phase: "protected", last: "blocked unsafe content (safe)" })[0].includes("🛡️") && !M.renderMuscleMemoryPanel({ phase: "protected" })[0].includes("⚠️"));
 ok("summary: staged write → Hermes-style line", M.summarizeReflectActions([{ phase: "skill_staged", summary: "staged 'foo' (new, 3 sessions/5 signals)" }]).startsWith("💾 muscle-memory review:"));
 ok("summary: update with extras (verbose)", M.summarizeReflectActions([{ phase: "skill_updated", summary: "updated 'foo'" }, { phase: "noise_rejected", summary: "rejected 2 env-noise items" }], "verbose").includes("rejected 2"));
 ok("summary: none → nothing-to-save", /nothing/i.test(M.summarizeReflectActions([{ phase: "reflect_none", summary: "nothing durable to save" }])));
