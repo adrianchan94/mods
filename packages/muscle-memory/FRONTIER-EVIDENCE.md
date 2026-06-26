@@ -14,7 +14,7 @@ Our reviewer (cross-conversation evidence) vs **Hermes's exact review prompt** (
 | iter-3 (decision-aware + short self-contained code) | 38.6 | 37.2 | 3/5 | ✅ winning |
 | **confirmation run (same prompt)** | **39.6** | **35.0** | **4/5** | ✅ **stable win** |
 
-Across the two refined runs: **muscle-memory ~39.1 vs Hermes ~36.1, ours wins 3-4/5** — a *stable* win, not variance. Per-domain it wins react, api-pagination, letta-mod, shopify; **git is Hermes's one stronghold** (its conflict-recovery decision-tree).
+Across **three** refined runs (38.6 / 39.6 / 37.8): **muscle-memory ~38.7 vs Hermes ~35.6, ours wins 3-4/5** — a *stable* win, not variance (held even after re-tuning the reviewer to capture every pitfall — see §2). Per-domain it wins react, api-pagination, letta-mod; **git is Hermes's one stronghold** (its conflict-recovery decision-tree).
 - **Honest:** the margin is real but not blowout (±5 swing). We went from **losing on prompt-craft to consistently beating Hermes's battle-tested prompt** — that's the headline of the refinement loop.
 - **Key fixes found by the judge:** our reviewer was producing broad-but-truncated skills; tuning it for *tight, complete, safe, decision-aware* skills (and short self-contained code blocks) flipped it.
 
