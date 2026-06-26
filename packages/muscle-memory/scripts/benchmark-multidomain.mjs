@@ -20,7 +20,7 @@ const AMODEL = process.env.MM_AUTHOR_MODEL || "gemini-3.5-flash-antigravity";
 async function author(system, user) {
   for (let a = 0; a < 2; a++) {
     try {
-      const r = await fetch(AURL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer not-needed" }, body: JSON.stringify({ model: AMODEL, max_tokens: 2000, temperature: 0.4, messages: [{ role: "system", content: system }, { role: "user", content: user }] }) });
+      const r = await fetch(AURL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer not-needed" }, body: JSON.stringify({ model: AMODEL, max_tokens: 6000, temperature: 0.4, messages: [{ role: "system", content: system }, { role: "user", content: user }] }) }); // 4000: ours produces richer skills — don't truncate them
       const m = (await r.json()).choices?.[0]?.message || {};
       const out = String(m.content || "").trim();
       if (out) return out;
@@ -75,8 +75,9 @@ const RUBRIC = (a, b) => `You are a strict skill-library quality judge. Gold sta
   const results = [];
   for (const d of DOMAINS) {
     process.stdout.write(`  ${d.name.padEnd(26)} authoring…`);
-    const ours = (await author(OURS_PROMPT, d.cross)).replace(/^```(?:markdown|md)?\n?|\n?```$/g, "").trim();
-    const herm = (await author(HERMES_PROMPT, d.single)).replace(/^```(?:markdown|md)?\n?|\n?```$/g, "").trim();
+    const clean = (s) => s.replace(/^```(?:markdown|md|yaml)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").replace(/^yaml\s*\n/i, "").trim();
+    const ours = clean(await author(OURS_PROMPT, d.cross));
+    const herm = clean(await author(HERMES_PROMPT, d.single));
     process.stdout.write(` judging…`);
     const verdict = gptJudge(RUBRIC(ours.slice(0, 2600), herm.slice(0, 2600)));
     const sa = Number((verdict.match(/ours\s*=\s*(\d+)/i) || [])[1] || 0);

@@ -904,13 +904,18 @@ export function buildCrossConversationEvidence(rows: Row[]): { digest: string; c
 }
 
 // The tuned v3 reviewer prompt (benchmark-proven Hermes-level: 43-44/50, hermes_level=yes).
-export const REVIEW_PROMPT = `You are the skill-library reviewer for a self-improving AI coding agent (agentskills.io). From the cross-session evidence, author ONE genuinely valuable CLASS-LEVEL skill IF a durable reusable lesson emerged. Be ACTIVE but selective.
-Author a CLASS-LEVEL skill (e.g. "editing-letta-code-mods") — NOT a narrow tool-transition. Frontmatter (name, description with triggers), then "## When to use", "## Procedure" (numbered, adaptable, with judgment), "## Pitfalls" (the ACTUAL failures + fixes from the evidence), "## Verification".
+export const REVIEW_PROMPT = `You are the skill-library reviewer for a self-improving AI coding agent (agentskills.io). From the cross-session evidence, author ONE genuinely valuable CLASS-LEVEL skill IF a durable reusable lesson emerged.
+
+Write a TIGHT, COMPLETE skill — a focused finished skill always beats a broad truncated one. Structure: frontmatter (name + description with triggers), then "## When to use" (concrete triggers), "## Procedure" (numbered, concrete, safe-first), "## Pitfalls" (the 3-5 HARDEST-WON failures, each as the real symptom → the exact fix), "## Verification". Keep it focused and UNDER ~70 lines; FINISH every section — never trail off mid-sentence or mid-code-block.
+
 HARD RULES:
+- DEPTH OVER BREADTH: capture the few highest-value lessons deeply, not every signal shallowly. Cut filler ruthlessly.
+- DECISION-AWARE: where the right fix depends on the situation, give a brief decision guide ("if X → do Y; else → Z"). Show before→after for a fix when it sharpens the point.
+- CONCRETE + ACCURATE: show exact, CORRECT code/commands in fenced blocks (a wrong or hand-wavy example is worse than none — verify it actually fixes the stated problem). Keep code snippets short + self-contained so they never get cut off. Every step specific.
+- SAFE: any destructive/irreversible step (reset --hard, force-push, rm, drop) MUST come after a backup/safety step, and say so.
 - NAMING: class-level only; never an x-to-y transition, error string, PR number, date, codename, or fix-/debug-/audit-today artifact.
 - NEGATIVE FILTER: never capture environment-dependent failures (command-not-found, missing binaries, uninstalled packages, creds) or tool-negatives ("X is broken").
-- CONCRETE > vague: show exact code/commands in fenced blocks for any non-obvious technique; every step specific; no filler; generic examples (no real dates/timestamps).
-Output ONLY the SKILL.md, or exactly "NOTHING-TO-SAVE".`;
+Output ONLY the complete SKILL.md (no preamble, not truncated), or exactly "NOTHING-TO-SAVE".`;
 
 /** ★ THE MEMFS LEVER: reliable in-mod KEYWORD search over existing skills (no QMD dependency —
  * semantic memfs_search crashes on some boxes). Powers UPDATE-FIRST routing: retrieve the skill
