@@ -959,11 +959,21 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
     ? `\n\nUPDATE-FIRST (anti-bloat): an existing skill already covers this territory — "${updTarget.name}": ${updTarget.description}. PREFER to extend it: keep that exact name, fold the new pitfalls/steps into a single improved full SKILL.md. Only use a different name if the territory is genuinely distinct.`
     : (matches.length ? `\n\nExisting skills (avoid duplicating): ${matches.map((m) => m.name).join(", ")}.` : "");
   const raw = (await authorFn(REVIEW_PROMPT, evidence + hint)) || "";
-  const skill = raw.replace(/^```(?:markdown|md)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  try { ensureDir(); writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} ===\n${raw}\n`); } catch { /* */ } // always capture last raw for debuggability
+  // ROBUST extraction — models may prepend reasoning/preamble, wrap in ```fences, or use a
+  // "# Title" heading instead of YAML frontmatter. Tolerate all; fall back to the update target.
+  let skill = raw.replace(/<\/?think>/gi, "").trim();
+  const startIdx = skill.search(/(^|\n)\s*(---\s*\n|#\s+|name:\s)/i);
+  if (startIdx > 0) skill = skill.slice(startIdx).trim();
+  skill = skill.replace(/^```(?:markdown|md|yaml)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
   if (/^NOTHING-TO-SAVE/i.test(skill) || skill.length < 40) return { action: "none" };
-  const name = slug((skill.match(/name:\s*(.+)/)?.[1] || "").trim());
-  const description = (skill.match(/description:\s*(.+)/)?.[1] || "").trim();
-  const body = skill.replace(/^---[\s\S]*?---\n?/, "").trim();
+  let name = slug((skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim());
+  if (!name) name = slug((skill.match(/^#\s+(.+?)\s*$/m)?.[1] || "").trim());
+  if (!name && updTarget) name = updTarget.name; // update-first: we already know the target
+  let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
+  if (!description) description = (skill.split("\n").find((l) => { const t = l.trim(); return t.length > 25 && !/^([#`>*-]|---|name:|title:|description:)/i.test(t); }) || "").trim();
+  if (!description && updTarget) description = updTarget.description;
+  const body = skill.replace(/^---[\s\S]*?---\n?/, "").replace(/^#\s+.+\n+/, "").trim();
   if (!isValidSkillName(name)) return { action: "reject", reason: `name "${name}" not class-level` };
   if (!description || description.length < 20) return { action: "reject", reason: "description too thin" };
   const sec = scanSkillContent(body); if (!sec.ok) return { action: "reject", reason: `security: ${sec.issues.join("; ")}` };
@@ -1046,14 +1056,13 @@ export function summarizeReflectActions(events: Array<{ phase: string; summary: 
 }
 
 /** Panel body (string[] = lines). Cheap + side-effect-free; host clips/caps. Empty → panel hides. */
+// LEAN, Hermes-style: ONE dense line. Hidden when off+idle (zero real estate).
 export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
   const mode = process.env.MM_REFLECT === "auto" ? "auto" : process.env.MM_REFLECT === "staged" ? "staged" : "off";
-  if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory v3 · reflect ${mode} · watching…`];
-  const lines = [`💾 muscle-memory v3 · reflect ${mode}${state.phase ? ` · ${state.phase}` : ""}`];
-  if (state.last) lines.push(`last: ${state.last}`);
-  if (state.route) lines.push(`route: ${state.route}`);
-  if (state.counts) lines.push(state.counts);
-  return lines;
+  if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
+  if (state.phase === "reviewing") return [`💾 muscle-memory · reviewing…`];
+  // one line: the last finished action (already carries skill · route · sessions/signals)
+  return [`💾 muscle-memory · ${state.last || "ready"}`];
 }
 
 // CROSS-AGENT MESH FEED — shared so the panel shows BOTH Mack (local) + Kev (cloud) distilling.
@@ -1110,6 +1119,7 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
       const verb = res.action === "update" ? (live ? "updated" : "staged update to") : (live ? "created" : "staged");
       const summary = `${verb} '${res.name}' (${res.action === "update" ? "update-first" : "new"}, ${ev.convs} sessions/${ev.items} signals)`;
       appendUiEvent({ phase, summary, skill: res.name, action: res.action, route: res.updateTarget ? `update ${res.updateTarget}` : "create" });
+      appendMeshFeed({ type: phase, skill: res.name, route: res.action.toUpperCase(), signals: ev.items }); // cross-agent feed (see Mack + Kev distilling)
       appendUiEvent({ phase: "evidence_manifest_written", summary: "wrote evidence manifest" });
       if (ev.rejected.length) appendUiEvent({ phase: "noise_rejected", summary: `rejected ${ev.rejected.length} env-noise items` });
       if (prefs.length) appendUiEvent({ phase: "memory_pref_injected", summary: `injected ${prefs.length} user preferences` });
@@ -1125,7 +1135,7 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
 // Test hook (deterministic validation without live data).
 export const __mm = { commandTemplate, fingerprint, detect, detectTemplates, detectSequences, maturityScore, MM, loadRows, dedupCheck, slug, draftSkillFromCandidate, candidateName, candidateDescription, curateManagedSkills, managedSkillUsage,
   isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview,
-  buildEvidenceManifest, retrievePreferences, coverageMap, churnSignal, summarizeReflectActions, renderMuscleMemoryPanel,
+  buildEvidenceManifest, retrievePreferences, coverageMap, churnSignal, summarizeReflectActions, renderMuscleMemoryPanel, loadMeshFeed, renderMeshFeed,
   buildRegistry, curatorPass, skillVerbs, specDrift, lifecycleTransition, CURATOR, setPinned, isPinned, buildDefenses, preActionDefense,
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
@@ -1233,7 +1243,28 @@ export default function activate(letta: any) {
     disposers.push(letta.commands.register({
       id: "muscle-memory",
       description: "Show muscle-memory observations + current mature skill candidates",
-      async run() {
+      async run(ctx: any = {}) {
+        const argv = Array.isArray(ctx?.argv) ? ctx.argv : String(ctx?.args || "").trim().split(/\s+/).filter(Boolean);
+        const sub = String(argv?.[0] || "").toLowerCase();
+        if (sub === "events") {
+          const n = Math.max(1, Math.min(50, Number(argv?.[1] || 8) || 8));
+          const events = loadUiEvents(n);
+          const lines = events.map((e) => `💾 muscle-memory review: ${e.summary}`);
+          return { type: "output", output: lines.join("\n") || "(no muscle-memory review events yet)" };
+        }
+        if (sub === "squad") {
+          const feed = loadMeshFeed(10);
+          return { type: "output", output: feed.length ? "💾 squad distillations (cross-agent):\n" + renderMeshFeed(feed).map((l) => `  ${l}`).join("\n") : "(no squad distillations yet — Mack + Kev appear here as they distill)" };
+        }
+        if (sub === "staged") {
+          let s: string[] = []; try { s = existsSync(STAGED_DIR) ? readdirSync(STAGED_DIR).filter((n) => existsSync(join(STAGED_DIR, n, "SKILL.md"))) : []; } catch { /* */ }
+          return { type: "output", output: s.length ? "staged skills (1-tap to graduate):\n" + s.map((n) => `  · ${n}`).join("\n") : "(no staged skills yet — set MM_REFLECT=staged, work a few sessions)" };
+        }
+        if (sub === "coverage") {
+          const cov = coverageMap(loadExperience(), scanDirs(ctx));
+          const icon = (st: string) => st === "covered" ? "✓" : st === "uncovered" ? "＋" : st === "over-covered" ? "⧉" : "✗";
+          return { type: "output", output: cov.length ? cov.map((c) => `${icon(c.status)} [${c.status}] ${c.domain}${c.skill ? ` → ${c.skill}` : ""}`).join("\n") : "(no durable task-classes yet)" };
+        }
         const rows = loadExperience();
         const byTool: Record<string, number> = {};
         for (const r of rows) byTool[r.tool] = (byTool[r.tool] || 0) + 1;
@@ -1249,16 +1280,19 @@ export default function activate(letta: any) {
         try { staged = existsSync(STAGED_DIR) ? readdirSync(STAGED_DIR).filter((n) => existsSync(join(STAGED_DIR, n, "SKILL.md"))).length : 0; } catch { /* */ }
         const cov = (() => { try { const c = coverageMap(rows, scanDirs(ctx)); return `${c.filter((x) => x.status === "covered").length} covered / ${c.filter((x) => x.status === "uncovered").length} uncovered / ${c.filter((x) => x.status === "over-covered").length} over-covered`; } catch { return "n/a"; } })();
         const out = [
-          `💾 muscle-memory v3 · reflect ${mode}`,
+          `💾 muscle-memory · reflect ${mode}`,
           `last review: ${lastReview}`,
           `library: ${managed} managed · ${staged} staged · coverage ${cov}`,
           ``,
           `recent review events:`,
           events.slice(-5).map((e) => `  · ${e.summary}`).join("\n") || `  (none yet — set MM_REFLECT=staged, work a few sessions)`,
+          ...(() => { const feed = loadMeshFeed(4); return feed.length ? [``, `squad distillations (cross-agent):`, ...renderMeshFeed(feed).map((l) => `  ${l}`)] : []; })(),
           ``,
           `${rows.length} reps observed${toolLine ? ` · tools ${toolLine}` : ""}`,
           `mature candidates: ${candidates.length} (${templates.length} templates, ${sequences.length} sequences)`,
           cand || `  (none mature yet — need ≥${MM.MIN_COUNT}× across ≥${MM.MIN_CONVS} conversations)`,
+          ``,
+          `commands: /muscle-memory [events|squad|staged|coverage]`,
         ].join("\n");
         return { type: "output", output: out };
       },
