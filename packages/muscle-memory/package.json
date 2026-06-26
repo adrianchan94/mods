@@ -1,0 +1,61 @@
+{
+  "name": "@letta-ai/muscle-memory",
+  "version": "0.3.1",
+  "description": "Letta Code mod: a self-evolving skill foundry. A reflective reviewer distills CLASS-LEVEL skills from CROSS-CONVERSATION recall (not one session), routes update-first via MemFS search (anti-bloat), filters env-noise, runs a staged fork autopilot + curator, and learns failure defenses — all reversible, gated, and receipted. Benchmarked above Hermes's own review prompt on output quality + ability.",
+  "author": "Adrian Chan",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "letta-package",
+    "letta-mod",
+    "letta-code",
+    "agent-skills",
+    "skill-learning",
+    "self-improving-agents",
+    "tool-use-mining",
+    "experience-distillation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/letta-ai/mods.git",
+    "directory": "packages/muscle-memory"
+  },
+  "files": [
+    "README.md",
+    "MOD.md",
+    "LICENSE",
+    "mods",
+    "scripts",
+    "docs"
+  ],
+  "letta": {
+    "manifestVersion": 1,
+    "mods": [
+      "./mods/index.ts"
+    ],
+    "capabilities": [
+      "tools",
+      "commands",
+      "events.tools",
+      "events.lifecycle",
+      "ui.panels"
+    ],
+    "engines": {
+      "lettaCodeCli": ">=0.27.18"
+    }
+  },
+  "scripts": {
+    "test": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-test.mjs && node scripts/validate.mjs && npm run integration",
+    "demo": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-demo.mjs && node scripts/demo.mjs",
+    "integration": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-integration.mjs && node scripts/integration.mjs",
+    "hermes:parity": "node scripts/hermes-parity.mjs",
+    "money-demo": "node scripts/money-demo.mjs",
+    "live:defense": "node scripts/live-defense-correlation.mjs",
+    "review:test": "node scripts/v31-review-test.mjs",
+    "review:live": "node scripts/v31-live.mjs",
+    "benchmark": "node scripts/benchmark-vs-hermes.mjs",
+    "perf": "node scripts/perf-improvement.mjs",
+    "demo:reel": "node scripts/demo-reel.mjs",
+    "demo:record": "asciinema rec docs/demo.cast --overwrite -c 'node scripts/demo-reel.mjs' && agg --theme dracula --font-size 22 docs/demo.cast docs/demo.gif"
+  }
+}
