@@ -1791,7 +1791,7 @@ export default function activate(letta: any) {
 
     disposers.push(letta.tools.register({
       name: "muscle_memory_skill_read",
-      description: "Read-only muscle-memory lifecycle actions: list mature candidates, draft SKILL.md text, load managed skills, list managed skills, and curate usage. Use this before any write/graduation action.",
+      description: "muscle-memory = self-improving skills distilled from your own work. Read-only inspection (no approval, no writes). START HERE with action:reflect_plan — it previews the class-level skill it would distill from your cross-session history + the update-first routing (which existing skill it would create or patch). Also: coverage (skill-gap map), candidates/registry/curate (what it has observed + manages), list/load (inspect a managed skill). Run before any write.",
       parameters: readParams,
       requiresApproval: false,
       async run(ctx: any) { return readRun(ctx); },
@@ -1799,7 +1799,7 @@ export default function activate(letta: any) {
 
     disposers.push(letta.tools.register({
       name: "muscle_memory_skill_write",
-      description: "Approval-gated muscle-memory write actions: create skills from candidates, create explicit managed skills, patch/refine skills, and retire managed skills. Use only after reviewing read/draft output.",
+      description: "muscle-memory writes (approval-gated, reversible). THE CORE LOOP: action:reflect distills a class-level skill from your cross-conversation work → update-first anti-bloat, security/lint-gated, staged by default. graduate promotes a staged skill to your active skill shelf. Plus create/patch/edit_full/retire/restore/pin lifecycle + write_file for support files. Preview first with reflect_plan (the read tool). For no-approval reflect/graduate/publish/prune, use muscle_memory_lifecycle_run.",
       parameters: writeParams,
       requiresApproval: true,
       async run(ctx: any) { return writeRun(ctx); },
@@ -1807,7 +1807,7 @@ export default function activate(letta: any) {
 
     disposers.push(letta.tools.register({
       name: "muscle_memory_lifecycle_run",
-      description: "No-approval safe muscle-memory lifecycle actions: reflect, graduate staged skills, and conservative reversible prune. Broad manual edits remain in approval-gated muscle_memory_skill_write.",
+      description: "muscle-memory autonomous lifecycle (no-approval, safe, reversible): reflect (distill a skill from your work), graduate (promote a staged skill → active shelf), publish (mirror a skill → shared Custom Skills catalog), prune (retire stale/unused skills). This is the full self-improvement loop. Broad/manual skill edits → muscle_memory_skill_write; preview → reflect_plan in muscle_memory_skill_read.",
       parameters: lifecycleParams,
       requiresApproval: false,
       async run(ctx: any) { return lifecycleRun(ctx); },
