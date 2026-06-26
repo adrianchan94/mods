@@ -1,11 +1,11 @@
 {
-  "ts": "2026-06-26T11:49:40.683Z",
+  "ts": "2026-06-26T12:01:48.207Z",
   "author": "gemini-3.5-flash-antigravity",
   "results": [
     {
       "domain": "react-async-state",
       "n": 4,
-      "ours": 2,
+      "ours": 4,
       "hermes": 2
     },
     {
@@ -19,11 +19,23 @@
       "n": 4,
       "ours": 4,
       "hermes": 2
+    },
+    {
+      "domain": "shopify-liquid-perf",
+      "n": 4,
+      "ours": 4,
+      "hermes": 1
+    },
+    {
+      "domain": "letta-mod-development",
+      "n": 4,
+      "ours": 4,
+      "hermes": 1
     }
   ],
   "total": {
-    "ours": 10,
-    "hermes": 5,
-    "n": 12
+    "ours": 20,
+    "hermes": 7,
+    "n": 20
   }
 }

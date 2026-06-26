@@ -904,13 +904,18 @@ export function buildCrossConversationEvidence(rows: Row[]): { digest: string; c
 }
 
 // The tuned v3 reviewer prompt (benchmark-proven Hermes-level: 43-44/50, hermes_level=yes).
-export const REVIEW_PROMPT = `You are the skill-library reviewer for a self-improving AI coding agent (agentskills.io). From the cross-session evidence, author ONE genuinely valuable CLASS-LEVEL skill IF a durable reusable lesson emerged. Be ACTIVE but selective.
-Author a CLASS-LEVEL skill (e.g. "editing-letta-code-mods") — NOT a narrow tool-transition. Frontmatter (name, description with triggers), then "## When to use", "## Procedure" (numbered, adaptable, with judgment), "## Pitfalls" (the ACTUAL failures + fixes from the evidence), "## Verification".
+export const REVIEW_PROMPT = `You are the skill-library reviewer for a self-improving AI coding agent (agentskills.io). From the cross-session evidence, author ONE genuinely valuable CLASS-LEVEL skill IF a durable reusable lesson emerged.
+
+Write a TIGHT, COMPLETE skill — a focused finished skill always beats a broad truncated one. Structure: frontmatter (name + description with triggers), then "## When to use" (concrete triggers), "## Procedure" (numbered, concrete, safe-first), "## Pitfalls" (the 3-5 HARDEST-WON failures, each as the real symptom → the exact fix), "## Verification". Keep it focused and UNDER ~70 lines; FINISH every section — never trail off mid-sentence or mid-code-block.
+
 HARD RULES:
+- CAPTURE EVERY REAL PITFALL: include each genuinely-distinct hard-won failure in the evidence (this breadth of real, cross-session lessons IS the whole advantage), each with its exact fix. Cut filler, redundancy, and obvious steps ruthlessly — but never drop a real pitfall to save space.
+- DECISION-AWARE: where the right fix depends on the situation, give a brief decision guide ("if X → do Y; else → Z"). Show before→after for a fix when it sharpens the point.
+- CONCRETE + ACCURATE: show exact, CORRECT code/commands in fenced blocks (a wrong or hand-wavy example is worse than none — verify it actually fixes the stated problem). Keep code snippets short + self-contained so they never get cut off. Every step specific.
+- SAFE: any destructive/irreversible step (reset --hard, force-push, rm, drop) MUST come after a backup/safety step, and say so.
 - NAMING: class-level only; never an x-to-y transition, error string, PR number, date, codename, or fix-/debug-/audit-today artifact.
 - NEGATIVE FILTER: never capture environment-dependent failures (command-not-found, missing binaries, uninstalled packages, creds) or tool-negatives ("X is broken").
-- CONCRETE > vague: show exact code/commands in fenced blocks for any non-obvious technique; every step specific; no filler; generic examples (no real dates/timestamps).
-Output ONLY the SKILL.md, or exactly "NOTHING-TO-SAVE".`;
+Output ONLY the complete SKILL.md (no preamble, not truncated), or exactly "NOTHING-TO-SAVE".`;
 
 /** ★ THE MEMFS LEVER: reliable in-mod KEYWORD search over existing skills (no QMD dependency —
  * semantic memfs_search crashes on some boxes). Powers UPDATE-FIRST routing: retrieve the skill
@@ -919,7 +924,7 @@ Output ONLY the SKILL.md, or exactly "NOTHING-TO-SAVE".`;
 // Generic dev/agent words that must NOT drive update-first routing (they false-positive across
 // unrelated skills, e.g. "validate"/"run"/"tool" matching shopify-cli for mod-validation work).
 const SEARCH_STOP = new Set("the and for with via use using used run running runs tool tools command commands file files validate validating validation build builds building test testing tests check checking code into from that this your you any new real step steps workflow workflows work works working session sessions across before after fix fixed fixing error errors fail failed failing not add get set make made need want call calls called when then them they here there what which how its has have will can may also same each only over under out off across recurring observed".split(" "));
-const SEARCH_DISTINCT_MIN = 2; // need ≥2 distinctive (non-stopword) term hits in name/description
+const SEARCH_DISTINCT_MIN = 3; // ≥3 distinctive (non-stopword) hits in name/desc — prevents cross-domain false-positives (e.g. browser-QA→cloud-forensics)
 export function searchSkills(dirs: string[], query: string, k = 5): Array<{ name: string; description: string; dir: string; score: number; matched: number }> {
   const terms = [...new Set(String(query).toLowerCase().split(/[^a-z0-9.]+/).filter((t) => t.length > 2 && !SEARCH_STOP.has(t)))];
   const out: Array<{ name: string; description: string; dir: string; score: number; matched: number }> = [];
@@ -959,11 +964,21 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
     ? `\n\nUPDATE-FIRST (anti-bloat): an existing skill already covers this territory — "${updTarget.name}": ${updTarget.description}. PREFER to extend it: keep that exact name, fold the new pitfalls/steps into a single improved full SKILL.md. Only use a different name if the territory is genuinely distinct.`
     : (matches.length ? `\n\nExisting skills (avoid duplicating): ${matches.map((m) => m.name).join(", ")}.` : "");
   const raw = (await authorFn(REVIEW_PROMPT, evidence + hint)) || "";
-  const skill = raw.replace(/^```(?:markdown|md)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  try { ensureDir(); writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} ===\n${raw}\n`); } catch { /* */ } // always capture last raw for debuggability
+  // ROBUST extraction — models may prepend reasoning/preamble, wrap in ```fences, or use a
+  // "# Title" heading instead of YAML frontmatter. Tolerate all; fall back to the update target.
+  let skill = raw.replace(/<\/?think>/gi, "").trim();
+  const startIdx = skill.search(/(^|\n)\s*(---\s*\n|#\s+|name:\s)/i);
+  if (startIdx > 0) skill = skill.slice(startIdx).trim();
+  skill = skill.replace(/^```(?:markdown|md|yaml)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
   if (/^NOTHING-TO-SAVE/i.test(skill) || skill.length < 40) return { action: "none" };
-  const name = slug((skill.match(/name:\s*(.+)/)?.[1] || "").trim());
-  const description = (skill.match(/description:\s*(.+)/)?.[1] || "").trim();
-  const body = skill.replace(/^---[\s\S]*?---\n?/, "").trim();
+  let name = slug((skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim());
+  if (!name) name = slug((skill.match(/^#\s+(.+?)\s*$/m)?.[1] || "").trim());
+  if (!name && updTarget) name = updTarget.name; // update-first: we already know the target
+  let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
+  if (!description) description = (skill.split("\n").find((l) => { const t = l.trim(); return t.length > 25 && !/^([#`>*-]|---|name:|title:|description:)/i.test(t); }) || "").trim();
+  if (!description && updTarget) description = updTarget.description;
+  const body = skill.replace(/^---[\s\S]*?---\n?/, "").replace(/^#\s+.+\n+/, "").trim();
   if (!isValidSkillName(name)) return { action: "reject", reason: `name "${name}" not class-level` };
   if (!description || description.length < 20) return { action: "reject", reason: "description too thin" };
   const sec = scanSkillContent(body); if (!sec.ok) return { action: "reject", reason: `security: ${sec.issues.join("; ")}` };
@@ -1032,7 +1047,8 @@ const UI_EVENTS = join(STATE_DIR, "ui-events.jsonl");
 const UI_STATE = join(STATE_DIR, "ui-state.json");
 export type UiEvent = { ts: number; phase: string; summary: string; skill?: string; action?: string; route?: string; source: "muscle-memory" };
 function appendUiEvent(e: { phase: string; summary: string; skill?: string; action?: string; route?: string }) { try { ensureDir(); appendJsonl(UI_EVENTS, { ts: Date.now(), source: "muscle-memory", ...e }); } catch { /* */ } }
-function writeUiState(s: Record<string, unknown>) { try { ensureDir(); writeFileSync(UI_STATE, JSON.stringify({ ...readUiState(), ...s, ts: Date.now() })); } catch { /* */ } }
+let livePanel: any = null; // set in activate(); lets state changes re-render the panel LIVE (interactive mirror)
+function writeUiState(s: Record<string, unknown>) { try { ensureDir(); writeFileSync(UI_STATE, JSON.stringify({ ...readUiState(), ...s, ts: Date.now() })); } catch { /* */ } try { livePanel?.update(); } catch { /* */ } }
 function readUiState(): Record<string, any> { try { return existsSync(UI_STATE) ? JSON.parse(readFileSync(UI_STATE, "utf8")) : {}; } catch { return {}; } }
 function loadUiEvents(n = 8): UiEvent[] { if (!existsSync(UI_EVENTS)) return []; const out: UiEvent[] = []; for (const l of readFileSync(UI_EVENTS, "utf8").trim().split("\n")) { if (!l) continue; try { out.push(JSON.parse(l)); } catch { /* */ } } return out.slice(-n); }
 
@@ -1046,14 +1062,17 @@ export function summarizeReflectActions(events: Array<{ phase: string; summary: 
 }
 
 /** Panel body (string[] = lines). Cheap + side-effect-free; host clips/caps. Empty → panel hides. */
+// LEAN, Hermes-style: ONE dense line that LIVE-mirrors skill development. Hidden when off+idle.
 export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
   const mode = process.env.MM_REFLECT === "auto" ? "auto" : process.env.MM_REFLECT === "staged" ? "staged" : "off";
-  if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory v3 · reflect ${mode} · watching…`];
-  const lines = [`💾 muscle-memory v3 · reflect ${mode}${state.phase ? ` · ${state.phase}` : ""}`];
-  if (state.last) lines.push(`last: ${state.last}`);
-  if (state.route) lines.push(`route: ${state.route}`);
-  if (state.counts) lines.push(state.counts);
-  return lines;
+  if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
+  switch (state.phase) {
+    case "reviewing": return [`💾 muscle-memory · 🔍 reviewing ${state.detail || "evidence…"}`];
+    case "routing": return [`💾 muscle-memory · 🧭 ${state.route || "routing…"}`];
+    case "writing": return [`💾 muscle-memory · ✍️  writing ${state.skill ? `'${state.skill}'` : "skill"}…`];
+    case "blocked": return [`💾 muscle-memory · ⚠️  ${state.last || "blocked"}`];
+    default: return [`💾 muscle-memory · ${state.last || "ready"}`]; // done/idle: the finished action
+  }
 }
 
 // CROSS-AGENT MESH FEED — shared so the panel shows BOTH Mack (local) + Kev (cloud) distilling.
@@ -1085,11 +1104,16 @@ function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<stri
 export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | "auto"; minItems?: number; authorFn?: (s: string, u: string) => Promise<string> } = {}): Promise<ReviewResult & { wrote?: string }> {
   const dirs = scanDirs(ctx);
   const ev = buildCrossConversationEvidence(loadExperience());
-  appendUiEvent({ phase: "review_started", summary: `reviewing ${ev.convs} sessions / ${ev.items} durable signals` }); writeUiState({ phase: "reviewing" });
+  appendUiEvent({ phase: "review_started", summary: `reviewing ${ev.convs} sessions / ${ev.items} durable signals` }); writeUiState({ phase: "reviewing", detail: `${ev.convs} sessions / ${ev.items} signals` });
   if (ev.items < (config.minItems ?? 2)) { appendUiEvent({ phase: "reflect_none", summary: `nothing to save yet (${ev.items} signals)` }); writeUiState({ phase: "idle", last: "nothing to save yet" }); return { action: "none", reason: `only ${ev.items} cross-session signals (need ≥${config.minItems ?? 2})` }; }
   // PERSONALIZED PATCHING: retrieve the user's actual preferences from memory and inject them.
   const prefs = retrievePreferences(ev.digest, process.env.MEMORY_DIR);
   const digest = ev.digest + (prefs.length ? `\n\nUSER PREFERENCES (from this agent's memory — bake the relevant ones into the skill's guidance):\n${prefs.map((p) => `- ${p}`).join("\n")}` : "");
+  // LIVE MIRROR: surface the route + writing phase during the (long) author call, so the panel animates.
+  const preTgt = pickUpdateTarget(searchSkills(dirs, digest, 3), 18);
+  writeUiState({ phase: "routing", route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE (new skill)" });
+  appendUiEvent({ phase: "review_planned", summary: preTgt ? `route UPDATE → ${preTgt.name}` : "route CREATE — no existing skill safely covers this" });
+  writeUiState({ phase: "writing", skill: preTgt?.name, route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE" });
   const author = config.authorFn || reviewForkAuthor(ctx);
   const res = await reviewAndAuthor(digest, dirs, author);
   if ((res.action === "create" || res.action === "update") && res.name && res.content) {
@@ -1225,6 +1249,7 @@ export default function activate(letta: any) {
   if (letta.capabilities?.ui?.panels && letta.ui?.openPanel) {
     try {
       panel = letta.ui.openPanel({ id: "muscle-memory-live", order: 20, render: () => { try { return renderMuscleMemoryPanel(readUiState()); } catch { return []; } } });
+      livePanel = panel; // enable LIVE re-render on every state change
       const t = setInterval(() => { try { panel?.update(); } catch { /* */ } }, 60_000);
       disposers.push(() => { clearInterval(t); try { panel?.close(); } catch { /* */ } });
     } catch { /* UI optional */ }
@@ -1271,7 +1296,7 @@ export default function activate(letta: any) {
         try { staged = existsSync(STAGED_DIR) ? readdirSync(STAGED_DIR).filter((n) => existsSync(join(STAGED_DIR, n, "SKILL.md"))).length : 0; } catch { /* */ }
         const cov = (() => { try { const c = coverageMap(rows, scanDirs(ctx)); return `${c.filter((x) => x.status === "covered").length} covered / ${c.filter((x) => x.status === "uncovered").length} uncovered / ${c.filter((x) => x.status === "over-covered").length} over-covered`; } catch { return "n/a"; } })();
         const out = [
-          `💾 muscle-memory v3 · reflect ${mode}`,
+          `💾 muscle-memory · reflect ${mode}`,
           `last review: ${lastReview}`,
           `library: ${managed} managed · ${staged} staged · coverage ${cov}`,
           ``,

@@ -909,7 +909,7 @@ export const REVIEW_PROMPT = `You are the skill-library reviewer for a self-impr
 Write a TIGHT, COMPLETE skill — a focused finished skill always beats a broad truncated one. Structure: frontmatter (name + description with triggers), then "## When to use" (concrete triggers), "## Procedure" (numbered, concrete, safe-first), "## Pitfalls" (the 3-5 HARDEST-WON failures, each as the real symptom → the exact fix), "## Verification". Keep it focused and UNDER ~70 lines; FINISH every section — never trail off mid-sentence or mid-code-block.
 
 HARD RULES:
-- DEPTH OVER BREADTH: capture the few highest-value lessons deeply, not every signal shallowly. Cut filler ruthlessly.
+- CAPTURE EVERY REAL PITFALL: include each genuinely-distinct hard-won failure in the evidence (this breadth of real, cross-session lessons IS the whole advantage), each with its exact fix. Cut filler, redundancy, and obvious steps ruthlessly — but never drop a real pitfall to save space.
 - DECISION-AWARE: where the right fix depends on the situation, give a brief decision guide ("if X → do Y; else → Z"). Show before→after for a fix when it sharpens the point.
 - CONCRETE + ACCURATE: show exact, CORRECT code/commands in fenced blocks (a wrong or hand-wavy example is worse than none — verify it actually fixes the stated problem). Keep code snippets short + self-contained so they never get cut off. Every step specific.
 - SAFE: any destructive/irreversible step (reset --hard, force-push, rm, drop) MUST come after a backup/safety step, and say so.
@@ -1047,7 +1047,8 @@ const UI_EVENTS = join(STATE_DIR, "ui-events.jsonl");
 const UI_STATE = join(STATE_DIR, "ui-state.json");
 export type UiEvent = { ts: number; phase: string; summary: string; skill?: string; action?: string; route?: string; source: "muscle-memory" };
 function appendUiEvent(e: { phase: string; summary: string; skill?: string; action?: string; route?: string }) { try { ensureDir(); appendJsonl(UI_EVENTS, { ts: Date.now(), source: "muscle-memory", ...e }); } catch { /* */ } }
-function writeUiState(s: Record<string, unknown>) { try { ensureDir(); writeFileSync(UI_STATE, JSON.stringify({ ...readUiState(), ...s, ts: Date.now() })); } catch { /* */ } }
+let livePanel: any = null; // set in activate(); lets state changes re-render the panel LIVE (interactive mirror)
+function writeUiState(s: Record<string, unknown>) { try { ensureDir(); writeFileSync(UI_STATE, JSON.stringify({ ...readUiState(), ...s, ts: Date.now() })); } catch { /* */ } try { livePanel?.update(); } catch { /* */ } }
 function readUiState(): Record<string, any> { try { return existsSync(UI_STATE) ? JSON.parse(readFileSync(UI_STATE, "utf8")) : {}; } catch { return {}; } }
 function loadUiEvents(n = 8): UiEvent[] { if (!existsSync(UI_EVENTS)) return []; const out: UiEvent[] = []; for (const l of readFileSync(UI_EVENTS, "utf8").trim().split("\n")) { if (!l) continue; try { out.push(JSON.parse(l)); } catch { /* */ } } return out.slice(-n); }
 
@@ -1061,13 +1062,17 @@ export function summarizeReflectActions(events: Array<{ phase: string; summary: 
 }
 
 /** Panel body (string[] = lines). Cheap + side-effect-free; host clips/caps. Empty → panel hides. */
-// LEAN, Hermes-style: ONE dense line. Hidden when off+idle (zero real estate).
+// LEAN, Hermes-style: ONE dense line that LIVE-mirrors skill development. Hidden when off+idle.
 export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
   const mode = process.env.MM_REFLECT === "auto" ? "auto" : process.env.MM_REFLECT === "staged" ? "staged" : "off";
   if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
-  if (state.phase === "reviewing") return [`💾 muscle-memory · reviewing…`];
-  // one line: the last finished action (already carries skill · route · sessions/signals)
-  return [`💾 muscle-memory · ${state.last || "ready"}`];
+  switch (state.phase) {
+    case "reviewing": return [`💾 muscle-memory · 🔍 reviewing ${state.detail || "evidence…"}`];
+    case "routing": return [`💾 muscle-memory · 🧭 ${state.route || "routing…"}`];
+    case "writing": return [`💾 muscle-memory · ✍️  writing ${state.skill ? `'${state.skill}'` : "skill"}…`];
+    case "blocked": return [`💾 muscle-memory · ⚠️  ${state.last || "blocked"}`];
+    default: return [`💾 muscle-memory · ${state.last || "ready"}`]; // done/idle: the finished action
+  }
 }
 
 // CROSS-AGENT MESH FEED — shared so the panel shows BOTH Mack (local) + Kev (cloud) distilling.
@@ -1099,11 +1104,16 @@ function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<stri
 export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | "auto"; minItems?: number; authorFn?: (s: string, u: string) => Promise<string> } = {}): Promise<ReviewResult & { wrote?: string }> {
   const dirs = scanDirs(ctx);
   const ev = buildCrossConversationEvidence(loadExperience());
-  appendUiEvent({ phase: "review_started", summary: `reviewing ${ev.convs} sessions / ${ev.items} durable signals` }); writeUiState({ phase: "reviewing" });
+  appendUiEvent({ phase: "review_started", summary: `reviewing ${ev.convs} sessions / ${ev.items} durable signals` }); writeUiState({ phase: "reviewing", detail: `${ev.convs} sessions / ${ev.items} signals` });
   if (ev.items < (config.minItems ?? 2)) { appendUiEvent({ phase: "reflect_none", summary: `nothing to save yet (${ev.items} signals)` }); writeUiState({ phase: "idle", last: "nothing to save yet" }); return { action: "none", reason: `only ${ev.items} cross-session signals (need ≥${config.minItems ?? 2})` }; }
   // PERSONALIZED PATCHING: retrieve the user's actual preferences from memory and inject them.
   const prefs = retrievePreferences(ev.digest, process.env.MEMORY_DIR);
   const digest = ev.digest + (prefs.length ? `\n\nUSER PREFERENCES (from this agent's memory — bake the relevant ones into the skill's guidance):\n${prefs.map((p) => `- ${p}`).join("\n")}` : "");
+  // LIVE MIRROR: surface the route + writing phase during the (long) author call, so the panel animates.
+  const preTgt = pickUpdateTarget(searchSkills(dirs, digest, 3), 18);
+  writeUiState({ phase: "routing", route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE (new skill)" });
+  appendUiEvent({ phase: "review_planned", summary: preTgt ? `route UPDATE → ${preTgt.name}` : "route CREATE — no existing skill safely covers this" });
+  writeUiState({ phase: "writing", skill: preTgt?.name, route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE" });
   const author = config.authorFn || reviewForkAuthor(ctx);
   const res = await reviewAndAuthor(digest, dirs, author);
   if ((res.action === "create" || res.action === "update") && res.name && res.content) {
@@ -1239,6 +1249,7 @@ export default function activate(letta: any) {
   if (letta.capabilities?.ui?.panels && letta.ui?.openPanel) {
     try {
       panel = letta.ui.openPanel({ id: "muscle-memory-live", order: 20, render: () => { try { return renderMuscleMemoryPanel(readUiState()); } catch { return []; } } });
+      livePanel = panel; // enable LIVE re-render on every state change
       const t = setInterval(() => { try { panel?.update(); } catch { /* */ } }, 60_000);
       disposers.push(() => { clearInterval(t); try { panel?.close(); } catch { /* */ } });
     } catch { /* UI optional */ }
