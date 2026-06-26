@@ -41,8 +41,10 @@ Fed muscle-memory's reviewer my **actual playbook history** across 3 unrelated d
 
 All 3 routed correctly (2 update-existing, 1 create-new) and produced genuinely frontier-level skills. **This proves it works across a variety of real tasks/projects, not just a synthetic benchmark.** (It also surfaced + fixed a real routing bug — browser-QA was false-positiving onto cloud-agent-forensics until we required ≥3 distinctive matches.)
 
-## 4. Runtime evidence — the skills measurably help (33% → 100%)
-`scripts/perf-improvement.mjs` · receipt `perf-improvement-result.json`. A/B: the agent does Letta-specific pitfall tasks without vs with the distilled skill — **first-try correctness 33% → 100% (+67 pts)**, zero regression where it already knew the answer.
+## 4. Runtime evidence — the skills measurably help
+**Domain-specific knowledge (where the skill is decisive):** `scripts/perf-improvement.mjs` · `perf-improvement-result.json`. A/B on Letta-specific pitfall tasks (ctx.args, /reload) without vs with the distilled skill — **first-try correctness 33% → 100% (+67 pts)**, zero regression. The agent *cannot* know these internals without the skill.
+
+**Runtime crush (coverage → outcome):** `scripts/runtime-crush.mjs` · `runtime-crush-result.json`. An agent does 4 tasks spanning all of api-pagination's pitfalls, loaded with muscle-memory's skill vs Hermes's skill: **4/4 vs 3/4**. Honest nuance: a *frontier* agent partially infers general-domain fixes on its own, so the marginal gap is modest here (vs the decisive 33→100 on domain-specific knowledge) — but ours still solves the pitfall Hermes's single-conversation skill never captured.
 
 ## 5. Where muscle-memory actually CRUSHES Hermes (the substrate)
 Per-skill prompt-craft is now ~even-to-ahead. The *decisive* wins are structural — things Hermes cannot do:

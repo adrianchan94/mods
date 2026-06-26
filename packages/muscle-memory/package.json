@@ -56,6 +56,10 @@
     "benchmark": "node scripts/benchmark-vs-hermes.mjs",
     "perf": "node scripts/perf-improvement.mjs",
     "demo:reel": "node scripts/demo-reel.mjs",
-    "demo:record": "asciinema rec docs/demo.cast --overwrite -c 'node scripts/demo-reel.mjs' && agg --theme dracula --font-size 22 docs/demo.cast docs/demo.gif"
+    "demo:record": "asciinema rec docs/demo.cast --overwrite -c 'node scripts/demo-reel.mjs' && agg --theme dracula --font-size 22 docs/demo.cast docs/demo.gif",
+    "benchmark:multidomain": "node scripts/benchmark-multidomain.mjs",
+    "benchmark:coverage": "node scripts/coverage-benchmark.mjs",
+    "replicate": "node scripts/replicate-workflows.mjs",
+    "runtime:crush": "node scripts/runtime-crush.mjs"
   }
 }
