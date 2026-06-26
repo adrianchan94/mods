@@ -12,6 +12,12 @@ ok('query and flag secret values scrubbed', !/abc123|xyz/.test(mm.commandTemplat
 const execFp = mm.fingerprint('exec_command', { cmd: 'cd /tmp/example && npm run validate' });
 ok('exec_command(cmd) templated', execFp.tmpl && execFp.tmpl.includes('npm run validate') && !execFp.tmpl.includes('/tmp/example'));
 
+
+const visualFp = mm.fingerprint('visual_receipt', { url: 'https://www.im8health.com', selectors: ['body','main'], viewports: [{name:'mobile'}, {name:'desktop'}] });
+ok('visual_receipt high-signal templated', visualFp.tmpl === 'visual_receipt im8health.com 2 viewports 2 selectors');
+const claimsFp = mm.fingerprint('im8_claims_lint', { text: '1 Serving Protects 9 Organ Systems', files: [] });
+ok('im8_claims_lint high-signal templated', claimsFp.tmpl === 'im8_claims_lint supplement-copy 0 files');
+
 const rows = [
   { ts: 1, conv: 'a', tool: 'Edit', tmpl: 'Edit <path>.md', ok: true },
   { ts: 2, conv: 'a', tool: 'Bash', tmpl: 'git add skills<path>', ok: true },

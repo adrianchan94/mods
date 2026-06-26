@@ -1,0 +1,190 @@
+{
+  "generatedAt": "2026-06-26T17:27:50.054Z",
+  "pass": true,
+  "commands": [
+    {
+      "name": "npm test",
+      "exitCode": 0,
+      "durationMs": 2171,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 test\n> npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-test.mjs && node scripts/validate.mjs && npm run integration\n\nPASS secret labels scrubbed\nPASS secret assignment values scrubbed\nPASS query and flag secret values scrubbed\nPASS exec_command(cmd) templated\nPASS visual_receipt high-signal templated\nPASS im8_claims_lint high-signal templated\nPASS detects mature candidates\nPASS detects edit-to-git-add sequence\nPASS detects fix pattern\nPASS draft includes observed pattern\nPASS candidate name slugged\nPASS curation helper exported\n\n12/12 checks passed\n\n> @letta-ai/muscle-memory@0.3.1 integration\n> npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-integration.mjs && node scripts/integration.mjs\n\n💾 muscle-memory · reflect off (set MM_REFLECT=staged to enable)\nlast review: (no review yet)\nlibrary: 2 managed · 0 staged · coverage 0 covered / 0 uncovered / 0 over-covered\n\nrecent review events:\n  (none yet — set MM_REFLECT=staged, work a few sessions)\n\n6 reps observed · tools exec_command:6\nmature candidates: 1 (1 templates, 0 sequences)\n  [4.08] template ×6/2conv  cd <path>&& npm run validate\n\ncommands: /muscle-memory [events|squad|staged|coverage]\nread-tool approval: no\nwrite-tool approval: yes\n\n  ../../../../../../../../tmp/muscle-memory-package-test.mjs  105.0kb\n\n⚡ Done in 6ms\n\n  ../../../../../../../../tmp/muscle-memory-package-integration.mjs  105.0kb\n\n⚡ Done in 6ms\n"
+    },
+    {
+      "name": "npm run review:test",
+      "exitCode": 0,
+      "durationMs": 1190,
+      "stdoutTail": "──────────────────────\n2 — CLASS-LEVEL NAMING GATE\n──────────────────────────────────────────────────────────────────────\n  PASS  class-level name → valid\n  PASS  x-to-y transition → rejected\n  PASS  fix- artifact → rejected\n  PASS  dated/PR-number → rejected\n  PASS  error-string name → rejected\n\n──────────────────────────────────────────────────────────────────────\n3 — CROSS-CONVERSATION EVIDENCE (Letta recall; env-noise filtered)\n──────────────────────────────────────────────────────────────────────\n  PASS  digest spans multiple sessions\n  PASS  captures the real recovered failure (TS2345)\n  PASS  DROPS env-noise (command not found: rg)\n  PASS  high-signal one-off tools become reflect evidence\n\n──────────────────────────────────────────────────────────────────────\n4 — searchSkills (MemFS keyword retrieval, the update-first engine)\n──────────────────────────────────────────────────────────────────────\n  PASS  finds the matching existing skill top\n  PASS  does NOT surface the unrelated skill on top\n  PASS  mod-validation evidence → top is a letta-mod skill (NOT shopify/mcp)\n  PASS  shopify-cli NOT chosen for mod work (Kev's live bug)\n  PASS  mcp-builder NOT chosen for mod work\n  PASS  safe target IS the letta-mod skill\n  PASS  only generic skills → pickUpdateTarget null → CREATE not wrong UPDATE\n\n──────────────────────────────────────────────────────────────────────\n5 — reviewAndAuthor: UPDATE-FIRST routing + gates (mock author)\n──────────────────────────────────────────────────────────────────────\n  PASS  UPDATE-FIRST: routes to patch the existing 'editing-letta-mods' (anti-bloat)\n  PASS  NEW domain → create (not forced into a dupe)\n  PASS  narrow x-to-y name → REJECTED by naming gate\n  PASS  dangerous body (curl|sh) → REJECTED by security gate\n  PASS  nothing durable → none\n  PASS  robust parse: preamble + <think> + ```fences → valid skill\n  PASS  robust parse: '# heading' name, no frontmatter → valid skill\n  PASS  robust parse: conversational wrapper + ## sections → valid skill with body\n\n──────────────────────────────────────────────────────────────────────\n6 — runReflectiveReview (autonomous wrapper: evidence→review→write+receipt, isolated state)\n──────────────────────────────────────────────────────────────────────\n  PASS  reflect: produced a write action (create/update)\n  PASS  reflect: wrote a skill file\n  PASS  reflect: wrote a receipt\n  PASS  reflect: wrote an EVIDENCE MANIFEST (provenance)\n  PASS  reflect: staged update-first sees existing staged skills (anti-bloat)\n  PASS  reflect: staged UPDATE auto-graduates to active skills dir\n  PASS  reflect: graduated update writes evidence manifest in active skill\n  PASS  reflect: handled evidence does not re-update the same skill forever\n  PASS  permission split: broad write tool stays approval-gated\n  PASS  permission split: safe lifecycle tool is no-approval\n  PASS  manual graduate action promotes staged skill to active skills dir\n  PASS  manual graduate action leaves active skill loadable\n  PASS  publish: mirrors sanitized SKILL.md into catalog root\n  PASS  publish: does not copy private evidence refs\n  PASS  publish: blocks private/local path skills from global catalog\n  PASS  reflect: high-confidence CREATE auto-graduates to active skills dir\n  PASS  reflect: low-confidence CREATE remains staged\n  PASS  reflect: invalid draft rejection is non-sticky idle, not blocked\n  PASS  reflect: low evidence → none\n  PASS  auto-prune: function exists\n  PASS  auto-prune: retires exactly one stale managed unpinned unused skill\n  PASS  auto-prune: cap prevents mass purge\n  PASS  auto-prune: never retires pinned/used/hand-authored skills\n  PASS  auto-prune: reversible quarantine exists\n  PASS  auto-prune: emits skill_retired mesh/feed event\n\n──────────────────────────────────────────────────────────────────────\n7 — v3.2 immaculate (manifests, coverage, persona retrieval, churn)\n──────────────────────────────────────────────────────────────────────\n  PASS  manifest: records sources + hashes + gates + rejected-noise\n  PASS  coverage: classifies a task-class (covered/uncovered)\n  PASS  persona: retrieves real preferences from memory\n  PASS  persona: ignores non-preference noise\n  PASS  churn: 5 patches/2d → needs-verification\n  PASS  churn: created-never-used → g-league\n  PASS  churn: used + low churn → stable-veteran\n  PASS  churn: reverted → blocked\n\n──────────────────────────────────────────────────────────────────────\n8 — v3.3 Hermes-visible UI (panel, summary, events, redaction)\n──────────────────────────────────────────────────────────────────────\n  PASS  panel hidden when idle + reflect off\n  PASS  panel shows 'watching' when reflect on (idle)\n  PASS  panel uses FULL 'muscle-memory' branding (never abbreviated 'MM')\n  PASS  panel LIVE-mirrors skill-dev phases (reviewing/routing/writing)\n  PASS  panel TTL: success states decay back to watching\n  PASS  panel TTL: fresh success stays visible\n  PASS  panel TTL: stale no-save idle decays quickly\n  PASS  panel: security block renders as 🛡️ safe, not ⚠️ error\n  PASS  summary: staged write → Hermes-style line\n  PASS  summary: update with extras (verbose)\n  PASS  summary: none → nothing-to-save\n  PASS  reflect wrote ui-events.jsonl (visible ledger)\n  PASS  reflect wrote ui-state.json (panel state)\n  PASS  ui-events are REDACTED (no secrets/args)\n  PASS  ui-events only carry lifecycle phases (no raw model drafts)\n  PASS  mesh feed renders cross-agent line (agent + skill + route)\n  PASS  loadMeshFeed is best-effort (array, never throws)\n  PASS  streamChunkText: string chunk\n  PASS  streamChunkText: {text}\n  PASS  streamChunkText: nested {content:{text}} (the bug)\n  PASS  streamChunkText: {content:[{text}]}\n  PASS  streamChunkText: OpenAI {choices:[{delta:{content}}]}\n  PASS  streamChunkText: control chunk → '' (never [object Object])\n\n──────────────────────────────────────────────────────────────────────\nVERDICT\n──────────────────────────────────────────────────────────────────────\n  86 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "npm run qa",
+      "exitCode": 0,
+      "durationMs": 3714,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 qa\n> node scripts/qa-stress.mjs && node scripts/qa-stress2.mjs && node scripts/qa-stress3.mjs\n\n\n── A · SECURITY: dangerous distilled content must be REJECTED ──\n  PASS  security blocks: curl | sh\n  PASS  security blocks: rm -rf /\n  PASS  security blocks: exfil to webhook\n  PASS  security blocks: embedded secret\n  PASS  security blocks: eval(atob())\n\n── B · PATH / NAME SAFETY: traversal + injection names rejected ──\n  PASS  name rejected: path traversal\n  PASS  name rejected: abs path\n  PASS  name rejected: dotdot\n  PASS  name rejected: spaces+special\n  PASS  name rejected: 64+ chars\n  PASS  isValidSkillName rejects traversal\n\n── C · MALFORMED / EMPTY / GARBAGE author output: graceful (none/reject), never crash ──\n  PASS  no crash + handled: empty string\n  PASS  no crash + handled: whitespace\n  PASS  no crash + handled: NOTHING-TO-SAVE\n  PASS  no crash + handled: pure prose (no skill)\n  PASS  no crash + handled: [object Object] junk\n  PASS  no crash + handled: only frontmatter no body\n\n── D · INPUT EDGE CASES: empty/null/huge, no crash ──\n  PASS  buildCrossConversationEvidence([]) → 0 items, no crash\n  PASS  buildCrossConversationEvidence(null-ish rows) → no crash\n  PASS  searchSkills([], '') → [] no crash\n  PASS  searchSkills with only-stopword query → no false match\n  PASS  pickUpdateTarget([]) → null\n  PASS  huge author output → handled (no crash)\n\n── E · streamChunkText: every shape incl hostile, never '[object Object]' ──\n  PASS  chunk null → \"\" (no [object Object])\n  PASS  chunk number → \"\" (no [object Object])\n  PASS  chunk nested deep → \"ok\" (no [object Object])\n  PASS  chunk array mixed → \"ab\" (no [object Object])\n  PASS  chunk control-only → \"\" (no [object Object])\n  PASS  chunk openai delta → \"z\" (no [object Object])\n\n── F · NEGATIVE FILTER robustness: never learn env-noise ──\n  PASS  isDurableLesson(command not found) = false\n  PASS  isDurableLesson(ENOENT) = false\n  PASS  isDurableLesson(401) = false\n  PASS  isDurableLesson(rate limit) = false\n  PASS  isDurableLesson(real type error) = true\n  PASS  isDurableLesson(real logic bug) = true\n\n────────────────────────────────────────────────────────────\n  35 PASS / 0 FAIL\n\n── G · CORRUPTED STATE FILES: skip bad data, never crash ──\n  PASS  loadExperience skips corrupt/empty/binary/partial lines\n  PASS  buildCrossConversationEvidence on corrupted log → no crash\n  PASS  renderMuscleMemoryPanel(corrupt-state-ish) → no crash\n\n── H · WRITE-FAILURE handling: unwritable target → graceful, no crash ──\n  PASS  runReflectiveReview returns a result object (never throws)\n  PASS  writeSkill to a path under a FILE (impossible dir) → caught, no crash\n\n── I · LIFECYCLE integrity: retire → restore round-trip ──\n  PASS  isManaged detects the written skill\n  PASS  listSkillNames includes it\n  PASS  retire returns without crash\n\n── J · ROUTING under a big noisy library: no false-positive, picks the right one or null ──\n  PASS  15-skill library: unrelated query → no false UPDATE\n  PASS  15-skill library: a real domain query → routes to the RIGHT skill\n  PASS  15-skill library: generic-words query → null (no dominance)\n\n── K · SCALE: huge inputs complete fast, no blowup ──\n  PASS  buildCrossConversationEvidence on 20k rows → completes, bounded output\n  PASS  searchSkills with a 10k-char query → no crash\n\n────────────────────────────────────────────────────────────\n  13 PASS / 0 FAIL\n\n── L · activate() never throws + registers handlers ──\n  PASS  activate(full caps) → no throw\n  PASS  registered event handlers present\n\n── M · HOT PATH: fire garbage events at every handler → NEVER throw ──\n  PASS  fired 560 garbage events across all handlers → none threw\n  PASS  global state not prototype-polluted\n\n── N · commands + tools handle garbage args → no throw ──\n  PASS  /muscle-memory command with garbage args → no throw\n  PASS  muscle_memory tools with garbage/malicious args → no throw\n\n── O · dispose cleanly ──\n  PASS  dispose() → no throw\n\n────────────────────────────────────────────────────────────\n  7 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "npm run hermes:parity",
+      "exitCode": 0,
+      "durationMs": 1090,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 hermes:parity\n> node scripts/hermes-parity.mjs\n\n\n────────────────────────────────────────────────────────────────────────\nM1 — support-file manager + restore (Hermes skill_manage parity)\n────────────────────────────────────────────────────────────────────────\n  PASS  write_file: references/ written\n  PASS  write_file: scripts/ (test-marked) written\n  PASS  traversal '../' blocked\n  PASS  absolute path blocked\n  PASS  dotfile segment blocked\n  PASS  non-support subdir blocked\n  PASS  validateSupportPath: good path ok\n  PASS  remove_file: reversible (quarantined, original gone)\n  PASS  retire: original gone, tombstone w/ absorbed_into\n  PASS  restore: skill back in place\n\n────────────────────────────────────────────────────────────────────────\nM2 — security + authoring gate\n────────────────────────────────────────────────────────────────────────\n  PASS  secret (api_key) blocked\n  PASS  private key blocked\n  PASS  curl|sh blocked\n  PASS  rm -rf root/home blocked\n  PASS  sudo blocked\n  PASS  force push blocked\n  PASS  prompt-injection blocked\n  PASS  huge body blocked\n  PASS  safe skill body allowed\n  PASS  support script network (non-test) blocked\n  PASS  support script test-marked allowed\n  PASS  safe reference file allowed\n\n────────────────────────────────────────────────────────────────────────\nM3 — registry + lifecycle curator (fake-clock)\n────────────────────────────────────────────────────────────────────────\n  PASS  day 5 active → no change\n  PASS  day 31 active → stale\n  PASS  day 91 stale → archived\n  PASS  recent use → reactivate stale → active\n  PASS  pinned → frozen (no transition)\n  PASS  registry: first-class fields (state/pinned/uses)\n  PASS  registry: missing dir doesn't crash\n\n────────────────────────────────────────────────────────────────────────\nM4 — staged fork autopilot (mock fork: valid / malformed / secret)\n────────────────────────────────────────────────────────────────────────\n  PASS  fork valid output → model-authored body returned\n  PASS  fork malformed → null (deterministic fallback)\n  PASS  fork secret/dangerous → null (rejected, no write)\n  PASS  fork without conversation.fork → null (graceful)\n  PASS  autopilot off-corpus → no decisions (bounded)\n\n────────────────────────────────────────────────────────────────────────\nM5 — failure-defense receipts (the edge Hermes lacks)\n────────────────────────────────────────────────────────────────────────\n  PASS  defenses built [trigger→error→consequence→defense]\n  PASS  pre-action defense matches a pending step\n  PASS  pre-action defense null for safe step\n\n────────────────────────────────────────────────────────────────────────\nM6 — compatibility / load safety (public-package trust)\n────────────────────────────────────────────────────────────────────────\n  PASS  activate loads + disposes clean — caps: full\n  PASS  activate loads + disposes clean — caps: no tools\n  PASS  activate loads + disposes clean — caps: no commands\n  PASS  activate loads + disposes clean — caps: no events.tools\n  PASS  activate loads + disposes clean — caps: no lifecycle\n  PASS  activate loads + disposes clean — caps: no events at all\n  PASS  activate loads + disposes clean — caps: empty\n\n────────────────────────────────────────────────────────────────────────\nVERDICT\n────────────────────────────────────────────────────────────────────────\n  44 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "npm run live:defense",
+      "exitCode": 0,
+      "durationMs": 1070,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 live:defense\n> node scripts/live-defense-correlation.mjs\n\n\n────────────────────────────────────────────────────────────────────────\n1 — correlateOutcomes (exact id → conv/tool/nearest → FIFO → drop)\n────────────────────────────────────────────────────────────────────────\n  PASS  exact id merge\n  PASS  no-id local shape (tool match) merges\n  PASS  FIFO fallback (no tool on end) → oldest unmatched\n  PASS  concurrency: tool match picks correct start\n  PASS  stale window → does NOT merge\n  PASS  cross-conversation → does NOT merge\n\n────────────────────────────────────────────────────────────────────────\n2 — repair → defense from EVENT-SHAPED data (no pre-merged rows)\n────────────────────────────────────────────────────────────────────────\n  PASS  correlated: first npx=fail, second npx=pass\n  PASS  repair chain detected FAIL[npx]→fix→PASS\n  PASS  defense built from correlated repair\n\n────────────────────────────────────────────────────────────────────────\n3 — LIVE-BACKEND EVENT-SHAPE harness (real handlers, simulated event objects)\n────────────────────────────────────────────────────────────────────────\n  PASS  mod activated; tool_start/tool_end/conversation_close handlers registered\n  PASS  live: experience + outcomes written to isolated state\n  PASS  LIVE high-signal receipt templated by tool_start handler\n  PASS  LIVE pre-action defense hit RECORDED before re-running the known failure\n     \u001b[33m↳ {\"ts\":1782494863004,\"conv\":\"sess\",\"step\":\"npx tsc\",\"kind\":\"fix\",\"errClass\":\"error TS2345: type mismatch\",\"defense\":\"apply Edit.ts, then re-run npx tsc\",\"severity\":2}\u001b[0m\n  PASS  mod disposes clean\n\n────────────────────────────────────────────────────────────────────────\nVERDICT\n────────────────────────────────────────────────────────────────────────\n  14 PASS / 0 FAIL\n"
+    },
+    {
+      "name": "npm run dogfood:kev-domain",
+      "exitCode": 0,
+      "durationMs": 1077,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 dogfood:kev-domain\n> node scripts/kev-domain-dogfood.mjs\n\n{\n  \"generatedAt\": \"2026-06-26T17:27:44.079Z\",\n  \"legacySignalItems\": 0,\n  \"newSignalItems\": 4,\n  \"uplift\": 4,\n  \"evidenceHasVisual\": true,\n  \"evidenceHasClaims\": true,\n  \"evidenceHasNoCap\": true,\n  \"evidenceHasPartial\": true,\n  \"action\": \"create\",\n  \"skill\": \"validating-shopify-visual-claims-with-receipts\",\n  \"wroteSkill\": true,\n  \"manifestExists\": true,\n  \"gates\": {\n    \"evidenceVisible\": true,\n    \"createdExpectedSkill\": true,\n    \"wroteSkill\": true,\n    \"manifest\": true,\n    \"skillHasPitfalls\": true,\n    \"security\": true,\n    \"lint\": true\n  },\n  \"evidenceDigest\": \"CROSS-CONVERSATION EVIDENCE (aggregated over 3 sessions of real tool-use):\\n- high-signal receipt workflow: visual_receipt im8health.com 2 viewports 4 selectors [1× across 1 session, 1 failed/partial receipt]\\n- high-signal receipt workflow: im8_claims_lint supplement-copy 0 files [1× across 1 session]\\n- high-signal receipt workflow: no_cap_gate_check high-trust-claim [1× across 1 session]\\n- high-signal receipt workflow: repo_radar_evidence kev-duo-dogfood-release-readiness [1× across 1 session]\",\n  \"stateDir\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-kev-domain-dogfood-49612\"\n}\n"
+    },
+    {
+      "name": "npm run dogfood:complete-loop",
+      "exitCode": 0,
+      "durationMs": 1116,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 dogfood:complete-loop\n> node scripts/complete-loop-dogfood.mjs\n\n{\n  \"pass\": true,\n  \"checks\": {\n    \"updateAutoGraduated\": true,\n    \"handledEvidenceSkipsRepeat\": true,\n    \"highCreateAutoGraduated\": true,\n    \"lowCreateStaged\": true,\n    \"manualGraduatePromoted\": true,\n    \"autoPruneRetiredOne\": true,\n    \"pruneGuardsKeptSafeSkills\": true,\n    \"meshGraduatedEvents\": true,\n    \"meshRetiredEvent\": true,\n    \"uiGraduatedEvents\": true,\n    \"uiRetiredEvent\": true,\n    \"uiStateUpdated\": true,\n    \"uiSummaryShowsLifecycle\": true\n  },\n  \"observed\": {\n    \"update\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-complete-loop-7heg1H/mem/skills/validating-loop-workflows\",\n    \"highCreate\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-complete-loop-7heg1H/mem/skills/capturing-aurora-renderer-proofs\",\n    \"lowCreate\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-complete-loop-7heg1H/staged/validating-weak-visual-receipts\",\n    \"manualGraduate\": \"graduated 'validating-weak-visual-receipts' -> /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-complete-loop-7heg1H/mem/skills/validating-weak-visual-receipts/SKILL.md\",\n    \"prune\": {\n      \"retired\": [\n        \"old-unused-loop-prune\"\n      ],\n      \"retiredPaths\": [\n        \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-complete-loop-7heg1H/mem/skills/_retired/old-unused-loop-prune-2026-06-26T17-27-45-192Z\"\n      ],\n      \"flagged\": [],\n      \"kept\": [\n        \"capturing-aurora-renderer-proofs\",\n        \"hand-authored-loop-keep\",\n        \"old-pinned-loop-keep\",\n        \"old-used-loop-keep\",\n        \"validating-loop-workflows\",\n        \"validating-weak-visual-receipts\",\n        \"accessibility\",\n        \"agent-browser\",\n        \"agentmail-email\",\n        \"agentyc-browser\",\n        \"ai-3d-asset-pipeline\",\n        \"ai-news\",\n        \"antigravity-runner\",\n        \"audio-reactive-visuals\",\n        \"awwwards-interactive-craft\",\n        \"best-practices\",\n        \"brainstorming\",\n        \"browser-ml-visuals\",\n        \"checking-websites-with-sortsite\",\n        \"chrome-devtools-cli\",\n        \"cinematic-postfx-pipeline\",\n        \"code-graph-impact\",\n        \"confidence-decay-retention\",\n        \"context-bloat-gate\",\n        \"context7-mcp\",\n        \"conversations\",\n        \"core-web-vitals\",\n        \"datadog\",\n        \"design-taste-frontend\",\n        \"doc\",\n        \"durable-quest-state\",\n        \"elite-shopify-workflow\",\n        \"elite-web-typography\",\n        \"executing-plans\",\n        \"find-skills\",\n        \"fleet-management\",\n        \"gaussian-splatting-web\",\n        \"gemini-media-toolkit\",\n        \"gemini-ui-pass\",\n        \"github\",\n        \"google-workspace-research\",\n        \"gpu-simulation-systems\",\n        \"grok-x-scout\",\n        \"hashline-edit\",\n        \"high-end-visual-design\",\n        \"importing-chatgpt-memory\",\n        \"kev-agy-amplifier\",\n        \"kev-self-maintenance\",\n        \"kev-voice-notes\",\n        \"kimi-glm-think-bridge\",\n        \"linear\",\n        \"mcp-broker-secrets-boundary\",\n        \"mcp-builder\",\n        \"morph-warpgrep\",\n        \"performance\",\n        \"pi-blitz-forge\",\n        \"procedural-generation\",\n        \"raymarching-sdf-worlds\",\n        \"realtime-pathtracing\",\n        \"receiving-code-review\",\n        \"redesign-existing-projects\",\n        \"requesting-code-review\",\n        \"reviewer-verifier-workflow\",\n        \"semble-code-search\",\n        \"sentry\",\n        \"seo\",\n        \"shopify-admin\",\n        \"shopify-custom-data\",\n        \"shopify-dev-mcp\",\n        \"shopify-liquid\",\n        \"shopify-storefront-graphql\",\n        \"shopify-use-shopify-cli\",\n        \"source-case-recall\",\n        \"subagent-driven-development\",\n        \"systematic-debugging\",\n        \"telegram-typing-patch\",\n        \"test-driven-development\",\n        \"trace-mcp-impact\",\n        \"validating-letta-code-mod-packages\",\n        \"vercel-composition-patterns\",\n        \"vercel-optimize\",\n        \"vercel-react-best-practices\",\n        \"vercel-react-view-transitions\",\n        \"visual-identity\",\n        \"web-design-guidelines\",\n        \"web-quality-audit\",\n        \"webgl-game-architecture\",\n        \"webgl-performance\",\n        \"webgl-shader-mastery\",\n        \"webgpu-tsl-compute\",\n        \"webxr-spatial\",\n        \"writing-plans\"\n      ]\n    }\n  }\n}\n"
+    },
+    {
+      "name": "npm run dogfood:separate-workflow",
+      "exitCode": 0,
+      "durationMs": 1087,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 dogfood:separate-workflow\n> node scripts/separate-workflow-dogfood.mjs\n\n{\n  \"pass\": true,\n  \"checks\": {\n    \"separateWorkflowNotLettaMods\": true,\n    \"createdShopifySkill\": true,\n    \"autoGraduatedActive\": true,\n    \"repeatSkippedByWaterline\": true,\n    \"uiShowsGraduatedThenSkip\": true,\n    \"meshShowsGraduated\": true,\n    \"noStagedModSkill\": true\n  },\n  \"observed\": {\n    \"first\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-separate-workflow-iu8GKF/mem/skills/validating-shopify-visual-claims\",\n    \"repeat\": \"already reflected update:validating-shopify-visual-claims for this evidence signature\",\n    \"uiState\": {\n      \"phase\": \"idle\",\n      \"detail\": \"3 sessions / 6 signals\",\n      \"ts\": 1782494866282,\n      \"route\": \"SKIP · handled\",\n      \"last\": \"already reflected update:validating-shopify-visual-claims for this evidence signature\"\n    }\n  }\n}\n"
+    },
+    {
+      "name": "npm run dogfood:catalog-publish",
+      "exitCode": 0,
+      "durationMs": 1056,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 dogfood:catalog-publish\n> node scripts/catalog-publish-dogfood.mjs\n\n{\n  \"pass\": true,\n  \"checks\": {\n    \"lifecycleToolNoApproval\": true,\n    \"publishedPortableSkill\": true,\n    \"copiedOnlySkillMd\": true,\n    \"catalogContentPrivacyClean\": true,\n    \"blockedPrivateSkill\": true,\n    \"uiPublishedEvent\": true,\n    \"meshPublishedEvent\": true\n  },\n  \"observed\": {\n    \"published\": \"published 'validating-portable-catalog-skills' -> /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-YiVCgA/global-skills/validating-portable-catalog-skills/SKILL.md\",\n    \"blocked\": \"privacy blocked: private absolute user path; private org/user/agent identifier\",\n    \"catalogSkill\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-YiVCgA/global-skills/validating-portable-catalog-skills/SKILL.md\"\n  }\n}\n"
+    },
+    {
+      "name": "npm run package:smoke",
+      "exitCode": 0,
+      "durationMs": 2308,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 package:smoke\n> node scripts/package-smoke.mjs\n\n{\n  \"pass\": true,\n  \"tmp\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg\",\n  \"tarball\": \"/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/pack/letta-ai-muscle-memory-0.3.1.tgz\",\n  \"requiredPresent\": {\n    \"package.json\": true,\n    \"mods/index.ts\": true,\n    \"README.md\": true,\n    \"HOMERUN-SCORECARD.md\": true,\n    \"homerun-scorecard-result.json\": true,\n    \"final-gate-result.json\": true,\n    \"kev-domain-dogfood-result.json\": true,\n    \"docs/kev-domain-dogfood-skill.md\": true,\n    \"scripts/kev-domain-dogfood.mjs\": true,\n    \"scripts/final-gate.mjs\": true,\n    \"scripts/scorecard.mjs\": true\n  },\n  \"behavior\": {\n    \"fingerprintTemplate\": \"visual_receipt im8health.com 2 viewports 2 selectors\",\n    \"handlerCapturedTemplate\": true\n  },\n  \"steps\": [\n    {\n      \"name\": \"npm pack\",\n      \"exitCode\": 0,\n      \"durationMs\": 215\n    },\n    {\n      \"name\": \"tarball exists\",\n      \"exitCode\": 0,\n      \"durationMs\": 0\n    },\n    {\n      \"name\": \"npm install tarball\",\n      \"exitCode\": 0,\n      \"durationMs\": 958\n    },\n    {\n      \"name\": \"required installed files\",\n      \"exitCode\": 0,\n      \"durationMs\": 0\n    },\n    {\n      \"name\": \"bundle installed mod\",\n      \"exitCode\": 0,\n      \"durationMs\": 970\n    },\n    {\n      \"name\": \"installed mod high-signal behavior\",\n      \"exitCode\": 0,\n      \"durationMs\": 0\n    }\n  ]\n}\n"
+    },
+    {
+      "name": "npm run scorecard",
+      "exitCode": 0,
+      "durationMs": 146,
+      "stdoutTail": "\n> @letta-ai/muscle-memory@0.3.1 scorecard\n> node scripts/scorecard.mjs\n\n{\n  \"pass\": true,\n  \"metrics\": {\n    \"pitfallCoverage\": {\n      \"ours\": 20,\n      \"hermes\": 7,\n      \"total\": 20,\n      \"multiplier\": 2.86\n    },\n    \"runtimeLettaPitfalls\": {\n      \"baseline\": 33,\n      \"withSkill\": 100,\n      \"lift\": 67\n    },\n    \"skillQuality\": {\n      \"oursAvg\": 38,\n      \"hermesAvg\": 36.6,\n      \"oursWins\": 3,\n      \"domains\": 5\n    },\n    \"runtimeCrush\": {\n      \"ours\": 4,\n      \"hermes\": 3,\n      \"tasks\": 4,\n      \"domain\": \"api-pagination\"\n    },\n    \"realWorkflowRouting\": {\n      \"total\": 3,\n      \"updates\": 2,\n      \"creates\": 1\n    },\n    \"kevDomainDogfood\": {\n      \"legacySignalItems\": 0,\n      \"newSignalItems\": 4,\n      \"uplift\": 4,\n      \"skill\": \"validating-shopify-visual-claims-with-receipts\"\n    },\n    \"packageSmoke\": {\n      \"pass\": true,\n      \"handlerCapturedTemplate\": true\n    },\n    \"liveReloadDogfood\": {\n      \"pass\": true,\n      \"stagedUpdateEvidence\": true,\n      \"duplicateQuarantined\": true,\n      \"meshFeedUpdate\": true\n    },\n    \"completeLoopDogfood\": {\n      \"pass\": true,\n      \"updateAutoGraduated\": true,\n      \"handledEvidenceSkipsRepeat\": true,\n      \"highCreateAutoGraduated\": true,\n      \"lowCreateStaged\": true,\n      \"manualGraduatePromoted\": true,\n      \"autoPruneRetiredOne\": true,\n      \"uiSummaryShowsLifecycle\": true\n    },\n    \"separateWorkflowDogfood\": {\n      \"pass\": true,\n      \"createdShopifySkill\": true,\n      \"autoGraduatedActive\": true,\n      \"repeatSkippedByWaterline\": true,\n      \"uiShowsGraduatedThenSkip\": true,\n      \"noStagedModSkill\": true\n    },\n    \"catalogPublishDogfood\": {\n      \"pass\": true,\n      \"lifecycleToolNoApproval\": true,\n      \"publishedPortableSkill\": true,\n      \"copiedOnlySkillMd\": true,\n      \"catalogContentPrivacyClean\": true,\n      \"blockedPrivateSkill\": true\n    }\n  },\n  \"artifactsPresent\": true\n}\n"
+    }
+  ],
+  "manifest": {
+    "name": "validate-manifests",
+    "exitCode": 0,
+    "durationMs": 50,
+    "stdoutTail": "All mod package manifests are valid.\n"
+  },
+  "pack": {
+    "name": "npm pack --dry-run",
+    "exitCode": 0,
+    "durationMs": 205,
+    "includes": {
+      "DOGFOOD-LOG.md": true,
+      "FRONTIER-EVIDENCE.md": true,
+      "README.md": true,
+      "MOD.md": true,
+      "kev-domain-dogfood-result.json": true,
+      "final-gate-result.json": true,
+      "homerun-scorecard-result.json": true,
+      "package-smoke-result.json": true,
+      "live-reload-dogfood-result.json": true,
+      "complete-loop-dogfood-result.json": true,
+      "separate-workflow-dogfood-result.json": true,
+      "catalog-publish-dogfood-result.json": true,
+      "HOMERUN-SCORECARD.md": true,
+      "docs/kev-domain-dogfood-skill.md": true,
+      "scripts/kev-domain-dogfood.mjs": true,
+      "scripts/final-gate.mjs": true,
+      "scripts/scorecard.mjs": true,
+      "scripts/package-smoke.mjs": true,
+      "scripts/live-reload-proof.mjs": true,
+      "scripts/complete-loop-dogfood.mjs": true,
+      "scripts/separate-workflow-dogfood.mjs": true,
+      "scripts/catalog-publish-dogfood.mjs": true,
+      "benchmark-multidomain-result.json": true,
+      "coverage-benchmark-result.json": true,
+      "perf-improvement-result.json": true,
+      "replicate-workflows-result.json": true,
+      "runtime-crush-result.json": true
+    },
+    "totalFiles": 53,
+    "stdoutTail": "letta-ai-muscle-memory-0.3.1.tgz\nnpm notice\nnpm notice 📦  @letta-ai/muscle-memory@0.3.1\nnpm notice Tarball Contents\nnpm notice 19.6kB DOGFOOD-LOG.md\nnpm notice 8.6kB FRONTIER-EVIDENCE.md\nnpm notice 3.0kB HOMERUN-SCORECARD.md\nnpm notice 1.1kB LICENSE\nnpm notice 4.0kB MOD.md\nnpm notice 10.3kB README.md\nnpm notice 34.0kB benchmark-multidomain-result.json\nnpm notice 3.2kB catalog-publish-dogfood-result.json\nnpm notice 14.9kB complete-loop-dogfood-result.json\nnpm notice 675B coverage-benchmark-result.json\nnpm notice 6.2kB docs/completion-audit.md\nnpm notice 4.3kB docs/demo.cast\nnpm notice 894.7kB docs/demo.gif\nnpm notice 485B docs/demo.tape\nnpm notice 2.7kB docs/kev-domain-dogfood-skill.md\nnpm notice 42.9kB final-gate-result.json\nnpm notice 3.2kB homerun-scorecard-result.json\nnpm notice 1.2kB kev-domain-dogfood-result.json\nnpm notice 4.1kB live-reload-dogfood-result.json\nnpm notice 136.9kB mods/index.ts\nnpm notice 17.8kB mods/v31-review-test.mjs\nnpm notice 3.2kB package-smoke-result.json\nnpm notice 3.3kB package.json\nnpm notice 499B perf-improvement-result.json\nnpm notice 16.0kB replicate-workflows-result.json\nnpm notice 153B runtime-crush-result.json\nnpm notice 10.1kB scripts/benchmark-multidomain.mjs\nnpm notice 12.9kB scripts/benchmark-vs-hermes.mjs\nnpm notice 5.1kB scripts/catalog-publish-dogfood.mjs\nnpm notice 10.1kB scripts/complete-loop-dogfood.mjs\nnpm notice 9.6kB scripts/coverage-benchmark.mjs\nnpm notice 6.3kB scripts/demo-reel.mjs\nnpm notice 4.7kB scripts/demo.mjs\nnpm notice 7.8kB scripts/final-gate.mjs\nnpm notice 9.3kB scripts/hermes-parity.mjs\nnpm notice 2.7kB scripts/integration.mjs\nnpm notice 6.9kB scripts/kev-domain-dogfood.mjs\nnpm notice 7.1kB scripts/live-defense-correlation.mjs\nnpm notice 4.3kB scripts/live-reload-proof.mjs\nnpm notice 9.3kB scripts/money-demo.mjs\nnpm notice 5.0kB scripts/package-smoke.mjs\nnpm notice 4.6kB scripts/perf-improvement.mjs\nnpm notice 6.5kB scripts/qa-stress.mjs\nnpm notice 7.3kB scripts/qa-stress2.mjs\nnpm notice 4.8kB scripts/qa-stress3.mjs\nnpm notice 6.3kB scripts/replicate-workflows.mjs\nnpm notice 4.8kB scripts/runtime-crush.mjs\nnpm notice 12.5kB scripts/scorecard.mjs\nnpm notice 5.0kB scripts/separate-workflow-dogfood.mjs\nnpm notice 4.3kB scripts/v31-live.mjs\nnpm notice 33.3kB scripts/v31-review-test.mjs\nnpm notice 3.2kB scripts/validate.mjs\nnpm notice 6.9kB separate-workflow-dogfood-result.json\nnpm notice Tarball Details\nnpm notice name: @letta-ai/muscle-memory\nnpm notice version: 0.3.1\nnpm notice filename: letta-ai-muscle-memory-0.3.1.tgz\nnpm notice package size: 1.0 MB\nnpm notice unpacked size: 1.4 MB\nnpm notice shasum: d12acd21ac04cb5619d896e42bbc0a4820da9c58\nnpm notice integrity: sha512-LbTEsnqlWBdsC[...]yo5jmb6ocMXTw==\nnpm notice total files: 53\nnpm notice\n"
+  },
+  "staleScan": {
+    "terms": [
+      "47 vs 35",
+      "47v35",
+      "49/49",
+      "BENCHMARK-REPORT"
+    ],
+    "hits": []
+  },
+  "packageSmoke": {
+    "pass": true,
+    "handlerCapturedTemplate": true,
+    "tarball": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/pack/letta-ai-muscle-memory-0.3.1.tgz"
+  },
+  "completeLoopDogfood": {
+    "pass": true,
+    "checks": {
+      "updateAutoGraduated": true,
+      "handledEvidenceSkipsRepeat": true,
+      "highCreateAutoGraduated": true,
+      "lowCreateStaged": true,
+      "manualGraduatePromoted": true,
+      "autoPruneRetiredOne": true,
+      "pruneGuardsKeptSafeSkills": true,
+      "meshGraduatedEvents": true,
+      "meshRetiredEvent": true,
+      "uiGraduatedEvents": true,
+      "uiRetiredEvent": true,
+      "uiStateUpdated": true,
+      "uiSummaryShowsLifecycle": true
+    }
+  },
+  "separateWorkflowDogfood": {
+    "pass": true,
+    "checks": {
+      "separateWorkflowNotLettaMods": true,
+      "createdShopifySkill": true,
+      "autoGraduatedActive": true,
+      "repeatSkippedByWaterline": true,
+      "uiShowsGraduatedThenSkip": true,
+      "meshShowsGraduated": true,
+      "noStagedModSkill": true
+    }
+  },
+  "catalogPublishDogfood": {
+    "pass": true,
+    "checks": {
+      "lifecycleToolNoApproval": true,
+      "publishedPortableSkill": true,
+      "copiedOnlySkillMd": true,
+      "catalogContentPrivacyClean": true,
+      "blockedPrivateSkill": true,
+      "uiPublishedEvent": true,
+      "meshPublishedEvent": true
+    }
+  },
+  "kevDomainDogfood": {
+    "legacySignalItems": 0,
+    "newSignalItems": 4,
+    "uplift": 4,
+    "skill": "validating-shopify-visual-claims-with-receipts",
+    "gates": {
+      "evidenceVisible": true,
+      "createdExpectedSkill": true,
+      "wroteSkill": true,
+      "manifest": true,
+      "skillHasPitfalls": true,
+      "security": true,
+      "lint": true
+    }
+  },
+  "caveats": [
+    "Does not run model/API benchmarks; uses packaged benchmark result receipts.",
+    "Does not claim full IM8 visual validation; Shot 5 desktop visual receipt failed and is documented partial.",
+    "Current hot-loaded Kev process needs /reload or fresh launch before live event capture uses the patched high-signal templates."
+  ]
+}

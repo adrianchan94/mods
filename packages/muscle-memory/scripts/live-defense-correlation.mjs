@@ -72,6 +72,10 @@ fire("tool_end", { toolName: "Bash", ok: true, conversationId: "sess" });
 fire("conversation_close", { conversationId: "sess" });
 // experience/outcomes actually landed
 ok("live: experience + outcomes written to isolated state", existsSync(join(STATE, "experience.jsonl")) && existsSync(join(STATE, "outcomes.jsonl")));
+// high-signal operator receipts must be templated by the REAL tool_start handler, not just unit fingerprint().
+fire("tool_start", { toolName: "visual_receipt", args: { url: "https://www.im8health.com", selectors: ["body", "main"], viewports: [{ name: "mobile" }, { name: "desktop" }] }, conversationId: "sess" });
+const expAfterHighSignal = readFileSync(join(STATE, "experience.jsonl"), "utf8");
+ok("LIVE high-signal receipt templated by tool_start handler", /visual_receipt im8health\.com 2 viewports 2 selectors/.test(expAfterHighSignal));
 // the agent is about to repeat the failing command → pre-action defense must fire
 fire("tool_start", { toolName: "Bash", args: { command: "npx tsc --noEmit" }, conversationId: "sess" });
 const hitsPath = join(STATE, "defense-hits.jsonl");

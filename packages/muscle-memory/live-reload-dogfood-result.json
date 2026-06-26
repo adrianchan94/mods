@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-06-26T15:20:43.270Z",
+  "pass": true,
+  "state": "/Users/chan2saucy/.letta/muscle-memory",
+  "checks": {
+    "highSignalVisualTemplate": true,
+    "highSignalRepoRadarTemplate": true,
+    "stagedQueueCleanedToOneKeeper": true,
+    "duplicateStagedSkillQuarantined": true,
+    "stagedUpdateEvidence": true,
+    "meshFeedUpdate": true
+  },
+  "observed": {
+    "highSignalRows": [
+      {
+        "ts": 1782485945188,
+        "conv": "conv-3df8eda0-0ac5-49cf-8117-859836079fbd",
+        "agent": "agent-71b0883e-c63f-4e79-bab4-a45a1380bd60",
+        "tool": "visual_receipt",
+        "fp": "visual_receipt(full_page,launch_args,out_dir,selectors,url,viewports,wait_load) :: visual_receipt example.com 1 viewports 2 selectors",
+        "tmpl": "visual_receipt example.com 1 viewports 2 selectors",
+        "h": "17d44262f0cc6c57",
+        "id": "call_9FKln4IKikJjyNL44irSeNsU"
+      },
+      {
+        "ts": 1782485972785,
+        "conv": "conv-3df8eda0-0ac5-49cf-8117-859836079fbd",
+        "agent": "agent-71b0883e-c63f-4e79-bab4-a45a1380bd60",
+        "tool": "repo_radar_evidence",
+        "fp": "repo_radar_evidence(artifacts,data,kind,repo,summary) :: repo_radar_evidence live-reload-high-signal-probe",
+        "tmpl": "repo_radar_evidence live-reload-high-signal-probe",
+        "h": "4d15930e25cdcb8f",
+        "id": "call_kjvzXxOAtua3eIZmX69BQngm"
+      },
+      {
+        "ts": 1782486418336,
+        "conv": "conv-3df8eda0-0ac5-49cf-8117-859836079fbd",
+        "agent": "agent-71b0883e-c63f-4e79-bab4-a45a1380bd60",
+        "tool": "repo_radar_evidence",
+        "fp": "repo_radar_evidence(artifacts,data,kind,repo,summary) :: repo_radar_evidence staged-update-first-antibloat",
+        "tmpl": "repo_radar_evidence staged-update-first-antibloat",
+        "h": "b5ac122b61aee709",
+        "id": "call_G1xNeUnXJdOvEZ0EeeFhbynN"
+      },
+      {
+        "ts": 1782486731919,
+        "conv": "conv-3df8eda0-0ac5-49cf-8117-859836079fbd",
+        "agent": "agent-71b0883e-c63f-4e79-bab4-a45a1380bd60",
+        "tool": "repo_radar_evidence",
+        "fp": "repo_radar_evidence(artifacts,data,kind,repo,summary) :: repo_radar_evidence staged-topmatch-antibloat-patch",
+        "tmpl": "repo_radar_evidence staged-topmatch-antibloat-patch",
+        "h": "0fb6d98477bcb2ea",
+        "id": "call_LiqCWpJ7nQeDrOzKe2srKxw0"
+      },
+      {
+        "ts": 1782486920507,
+        "conv": "conv-3df8eda0-0ac5-49cf-8117-859836079fbd",
+        "agent": "agent-71b0883e-c63f-4e79-bab4-a45a1380bd60",
+        "tool": "repo_radar_evidence",
+        "fp": "repo_radar_evidence(artifacts,data,kind,repo,summary) :: repo_radar_evidence live-staged-update-first-proof",
+        "tmpl": "repo_radar_evidence live-staged-update-first-proof",
+        "h": "ace49e2b4378612a",
+        "id": "call_t0j1t7VBbHeq5N0zPhbZPddT"
+      }
+    ],
+    "stagedSkills": [
+      "validating-letta-code-mod-packages"
+    ],
+    "retiredDuplicate": true,
+    "updateEvidence": {
+      "ts": "2026-06-26T15:14:47.597Z",
+      "action": "update",
+      "skill": "validating-letta-code-mod-packages",
+      "updateTarget": "validating-letta-code-mod-packages",
+      "sources": {
+        "conversations": 3,
+        "durableSignals": 12
+      },
+      "memfsHits": [
+        {
+          "name": "validating-letta-code-mod-packages",
+          "score": 78,
+          "matched": 3
+        },
+        {
+          "name": "validating-letta-mod-packages",
+          "score": 63,
+          "matched": 4
+        },
+        {
+          "name": "importing-chatgpt-memory",
+          "score": 45,
+          "matched": 2
+        }
+      ],
+      "oldHash": "1ec3a41a350fb40b",
+      "newHash": "a756eeffa2686886"
+    },
+    "meshUpdate": {
+      "agent": "agent",
+      "ts": 1782486887598,
+      "source": "muscle-memory",
+      "type": "skill_updated",
+      "skill": "validating-letta-code-mod-packages",
+      "route": "UPDATE",
+      "signals": 12
+    }
+  },
+  "caveat": "Local Kev live-state receipt; not a portable package install gate. Portable package behavior is covered by package-smoke-result.json."
+}

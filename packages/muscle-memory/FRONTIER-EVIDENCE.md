@@ -48,7 +48,22 @@ All 3 routed correctly (2 update-existing, 1 create-new) and produced genuinely 
 
 **Runtime crush (coverage → outcome):** `scripts/runtime-crush.mjs` · `runtime-crush-result.json`. An agent does 4 tasks spanning all of api-pagination's pitfalls, loaded with muscle-memory's skill vs Hermes's skill: **4/4 vs 3/4**. Honest nuance: a *frontier* agent partially infers general-domain fixes on its own, so the marginal gap is modest here (vs the decisive 33→100 on domain-specific knowledge) — but ours still solves the pitfall Hermes's single-conversation skill never captured.
 
-## 5. Where muscle-memory actually CRUSHES Hermes (the substrate)
+
+## 5. Live dogfood for Adrian/Kev workflows — operator receipt proof
+Kev dogfooded muscle-memory on work that matters to Adrian's actual stack: IM8/Shopify visual proof, no-cap release claims, claims-copy triage, and package evidence hygiene. That exposed a real blind spot: rare but consequential receipt tools were observed but not surfaced to the reviewer because the old evidence path favored repeated shell/npm templates.
+
+We patched the mod with a high-signal receipt lane and added `scripts/kev-domain-dogfood.mjs`. The deterministic harness seeds one partial visual receipt, one claims lint, one no-cap check, and one repo evidence receipt.
+
+| proof | legacy path | upgraded path |
+|---|---:|---:|
+| durable signals surfaced from Kev-domain receipts | 0 | **4** |
+| partial visual receipt labeled as failed/partial | no | **yes** |
+| created expected skill | no | **`validating-shopify-visual-claims-with-receipts`** |
+| evidence manifest written | no | **yes** |
+
+Receipt: `kev-domain-dogfood-result.json`. Generated skill artifact: `docs/kev-domain-dogfood-skill.md`. This is the "for us specifically" proof: muscle-memory now learns from Kev's Shopify visual/no-cap/claims workflows, not only shell-heavy mod-development loops.
+
+## 6. Where muscle-memory actually CRUSHES Hermes (the substrate)
 Per-skill prompt-craft is now ~even-to-ahead. The *decisive* wins are structural — things Hermes cannot do:
 - **Cross-conversation recall** — distills from the agent's whole history; Hermes reviews one conversation. (Earlier cross-conversation benchmark also favored muscle-memory; current packaged receipts emphasize the multi-domain quality, coverage, runtime, and replication results.)
 - **MemFS content-level update-first** — patches the right existing skill instead of duplicating; Hermes dedupes on names. Near-zero library bloat. (Proven live: regenerated cloud-agent-forensics & editing-letta-mods-safely as UPDATEs.)
@@ -58,7 +73,7 @@ Per-skill prompt-craft is now ~even-to-ahead. The *decisive* wins are structural
 ## Verdict (no cap)
 - **Pitfall coverage — the crush:** muscle-memory captures **100% vs Hermes's 35% (2.9x)** of each domain's real hard-won failure modes. Structural; Hermes can't close it.
 - **Skill quality (prompt-craft):** refined from *losing* (32.4, 1/5) to *consistently beating* Hermes's own prompt (**~39 vs ~36, 3-4/5** across two runs) with a frontier model. A real, stable win.
-- **Variety:** proven across 5 benchmark domains + 3 real-history workflows; correct update/create routing every time.
+- **Variety:** proven across 5 benchmark domains + 3 real-history workflows + live Kev-domain dogfood (operator receipts 0→4 signals); correct update/create routing every time.
 - **Runtime:** distilled skills lift the agent **33%→100%** first-try correctness.
 - **Substrate:** cross-conversation recall, content-level update-first, evidence manifests, visible UI — all things Hermes structurally lacks.
 

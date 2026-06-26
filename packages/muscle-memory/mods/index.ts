@@ -29,6 +29,7 @@ import { createHash } from "node:crypto";
 const STATE_DIR = process.env.MM_STATE_DIR || join(homedir(), ".letta", "muscle-memory");
 const LOG_PATH = join(STATE_DIR, "experience.jsonl");
 const SESSIONS_PATH = join(STATE_DIR, "sessions.jsonl");
+const GLOBAL_SKILLS_DIR = process.env.MM_GLOBAL_SKILLS_DIR || join(homedir(), ".letta", "skills");
 
 // ── Redaction ────────────────────────────────────────────────────────────────
 const SECRETISH = /(?:key|token|secret|password|passwd|auth|bearer|cookie|api[_-]?key)/i;
@@ -66,6 +67,14 @@ export function commandTemplate(cmd: string): string {
   return t.slice(0, 240);
 }
 
+const HIGH_SIGNAL_TOOL_SET = new Set(["visual_receipt", "im8_claims_lint", "no_cap_gate_check", "repo_radar_evidence", "kev_final_buzzer_gate", "im8_theme_done_gate", "im8_product_intel", "im8_write_plan"]);
+
+function hostOrToken(s: unknown): string {
+  const raw = String(s || "");
+  try { return new URL(raw).hostname.replace(/^www\./, ""); } catch { return slug(raw).slice(0, 48) || "unknown"; }
+}
+function countMaybeArray(v: unknown): number { return Array.isArray(v) ? v.length : v == null ? 0 : 1; }
+
 export function fingerprint(tool: string, args: Record<string, unknown>): { fp: string; tmpl: string | null } {
   let tmpl: string | null = null;
   const keys = Object.keys(args || {}).sort();
@@ -82,6 +91,22 @@ export function fingerprint(tool: string, args: Record<string, unknown>): { fp: 
     tmpl = `${tool} ${keys.join(",")}`;
   } else if (tool === "Skill" && typeof args?.skill === "string") {
     tmpl = `Skill ${slug(String(args.skill))}`;
+  } else if (tool === "visual_receipt") {
+    tmpl = `visual_receipt ${hostOrToken(args?.url)} ${countMaybeArray(args?.viewports)} viewports ${countMaybeArray(args?.selectors)} selectors`;
+  } else if (tool === "im8_claims_lint") {
+    tmpl = `im8_claims_lint supplement-copy ${countMaybeArray(args?.files)} files`;
+  } else if (tool === "no_cap_gate_check") {
+    tmpl = `no_cap_gate_check high-trust-claim`;
+  } else if (tool === "repo_radar_evidence" && typeof args?.kind === "string") {
+    tmpl = `repo_radar_evidence ${slug(String(args.kind))}`;
+  } else if (tool === "kev_final_buzzer_gate") {
+    tmpl = `kev_final_buzzer_gate final-readiness`;
+  } else if (tool === "im8_theme_done_gate") {
+    tmpl = `im8_theme_done_gate theme-readiness`;
+  } else if (tool === "im8_product_intel") {
+    tmpl = `im8_product_intel ${slug(String(args?.mode || "lookup"))}`;
+  } else if (tool === "im8_write_plan") {
+    tmpl = `im8_write_plan ${slug(String(args?.operation || "write-plan"))}`;
   }
   const shape = keys.filter((k) => !SECRETISH.test(k)).join(",");
   const fp = `${tool}(${shape})${tmpl ? " :: " + tmpl : ""}`;
@@ -361,6 +386,43 @@ function retireManagedSkill(name: string, reason: string, ctx?: any, absorbedInt
   // record the lifecycle event in the usage sidecar (reversible quarantine, Hermes "never delete")
   const u = loadUsage(); u[name] = { ...(u[name] || {}), state: "archived", absorbedInto: absorbedInto || undefined }; saveUsage(u);
   return target;
+}
+
+export function runAutonomousPrune(ctx?: any, opts: { maxRetire?: number } = {}): { retired: string[]; retiredPaths: string[]; flagged: string[]; kept: string[] } {
+  const maxRetire = Math.max(0, opts.maxRetire ?? 1);
+  const usage = loadUsage();
+  const now = Date.now();
+  const retired: string[] = [];
+  const retiredPaths: string[] = [];
+  const flagged: string[] = [];
+  const kept: string[] = [];
+
+  for (const d of scanDirs(ctx)) {
+    for (const n of listSkillNames(d)) {
+      if (!isManaged(d, n)) { kept.push(n); continue; }
+      const u = usage[n] || {};
+      if (u.pinned) { kept.push(n); continue; }
+      const uses = u.uses || 0;
+      if (uses > 0 || u.lastActivity) { kept.push(n); continue; }
+      const created = u.created || now;
+      const ageDays = Math.floor((now - created) / 86400000);
+      if (ageDays > 30 && retired.length < maxRetire) {
+        const reason = `auto-prune: 0 uses in ${ageDays}d — not earning context (reversible quarantine)`;
+        const target = retireManagedSkill(n, reason, ctx);
+        retired.push(n);
+        retiredPaths.push(target);
+        appendUiEvent({ phase: "skill_retired", summary: `retired '${n}' (0 uses, ${ageDays}d) — reversible`, skill: n, action: "retire", route: "auto-prune" });
+        appendMeshFeed({ type: "skill_retired", skill: n, route: "AUTO-PRUNE", signals: 0 });
+      } else if (ageDays > 14) {
+        flagged.push(n);
+        appendUiEvent({ phase: "skill_review", summary: `review '${n}' (0 uses, ${ageDays}d)`, skill: n, action: "review", route: "auto-prune" });
+      } else {
+        kept.push(n);
+      }
+    }
+  }
+  if (retired.length) writeUiState({ phase: "done", last: `retired '${retired[0]}' — reversible`, route: "AUTO-PRUNE · live" });
+  return { retired, retiredPaths, flagged, kept };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -692,6 +754,7 @@ export function restoreManagedSkill(name: string, ctx?: any): string {
 // optional fork-author is a quality layer on top. Gated, budgeted, reversible, receipted.
 // ════════════════════════════════════════════════════════════════════════════
 const STAGED_DIR = join(STATE_DIR, "staged");
+const STAGED_RETIRED_DIR = join(STATE_DIR, "staged-retired");
 const AUTOPILOT_STATE = join(STATE_DIR, "autopilot-state.json");
 export type AutopilotMode = "off" | "staged" | "auto";
 export type AutopilotConfig = { mode: AutopilotMode; dailyBudget: number; minImpact: number };
@@ -918,13 +981,22 @@ export function buildCrossConversationEvidence(rows: Row[]): { digest: string; c
   for (const r of allRepairs) if (!isDurableLesson(r.errClass)) rejected.push({ item: `${r.trigger} (${r.errClass})`, reason: "environment/transient — negative filter" });
   for (const p of allAps) if (!isDurableLesson(p.errClass)) rejected.push({ item: `${p.step} (${p.errClass})`, reason: "environment/transient — negative filter" });
   const tmpl = new Map<string, number>();
-  for (const r of rows) if (r.tmpl) tmpl.set(r.tmpl, (tmpl.get(r.tmpl) || 0) + 1);
+  const highSignal = new Map<string, { count: number; failures: number; convs: Set<string>; tool: string }>();
+  for (const r of rows) if (r.tmpl) {
+    tmpl.set(r.tmpl, (tmpl.get(r.tmpl) || 0) + 1);
+    if (HIGH_SIGNAL_TOOL_SET.has(r.tool)) {
+      const e = highSignal.get(r.tmpl) || { count: 0, failures: 0, convs: new Set<string>(), tool: r.tool };
+      e.count++; if (r.ok === false) e.failures++; e.convs.add(String(r.conv ?? "?")); highSignal.set(r.tmpl, e);
+    }
+  }
   const topTmpl = [...tmpl.entries()].filter(([t, c]) => c >= 3 && !PRIMITIVE.test(t)).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const high = [...highSignal.entries()].sort((a, b) => b[1].failures - a[1].failures || b[1].count - a[1].count).slice(0, 10);
   const L: string[] = [`CROSS-CONVERSATION EVIDENCE (aggregated over ${convs} sessions of real tool-use):`];
   for (const r of repairs.slice(0, 12)) L.push(`- recovered failure: "${r.trigger}" failed (${r.errClass}) → fixed via "${r.fixStep}" → re-ran "${r.verifyStep}" [${r.count}× across ${r.convs} sessions]`);
   for (const p of aps.slice(0, 8)) L.push(`- recurring failure (no clean fix yet): "${p.step}" — ${p.errClass} [${p.fails}×]`);
   for (const [t, c] of topTmpl) L.push(`- recurring workflow: ${t} [${c}×]`);
-  return { digest: L.join("\n"), convs, items: repairs.length + aps.length + topTmpl.length, rejected };
+  for (const [t, e] of high) L.push(`- high-signal receipt workflow: ${t} [${e.count}× across ${e.convs.size} session${e.convs.size === 1 ? "" : "s"}${e.failures ? `, ${e.failures} failed/partial receipt${e.failures === 1 ? "" : "s"}` : ""}]`);
+  return { digest: L.join("\n"), convs, items: repairs.length + aps.length + topTmpl.length + high.length, rejected };
 }
 
 // The tuned v3 reviewer prompt (benchmark-proven Hermes-level: 43-44/50, hermes_level=yes).
@@ -974,7 +1046,13 @@ export function pickUpdateTarget<T extends { name: string; score: number; matche
   const top = matches[0]; if (!top) return null;
   const second = matches[1];
   const dominates = !second || top.score >= 1.5 * second.score;
-  if (top.score >= threshold && top.matched >= SEARCH_DISTINCT_MIN && dominates) return { ...top, confidence: "high" };
+  // Normal active-library routing requires dominance to avoid patching the wrong durable skill.
+  // Staged queue exception: if the best match is already staged and has enough distinctive overlap,
+  // UPDATE it even without 1.5× dominance. Repeated staged reflects should refine/consolidate the
+  // current candidate, not spray sibling staged skills while waiting for review. (Live dogfood catch.)
+  const topDir = String((top as any).dir || "");
+  const topIsStaged = topDir === STAGED_DIR || /[\\/]staged$/.test(topDir);
+  if (top.score >= threshold && top.matched >= SEARCH_DISTINCT_MIN && (dominates || topIsStaged)) return { ...top, confidence: "high" };
   return null;
 }
 
@@ -1077,19 +1155,24 @@ export function churnSignal(i: { patches: number; ageDays: number; uses: number;
 // ════════════════════════════════════════════════════════════════════════════
 const UI_EVENTS = join(STATE_DIR, "ui-events.jsonl");
 const UI_STATE = join(STATE_DIR, "ui-state.json");
+const REFLECT_HANDLED = join(STATE_DIR, "reflect-handled.json");
 export type UiEvent = { ts: number; phase: string; summary: string; skill?: string; action?: string; route?: string; source: "muscle-memory" };
 function appendUiEvent(e: { phase: string; summary: string; skill?: string; action?: string; route?: string }) { try { ensureDir(); appendJsonl(UI_EVENTS, { ts: Date.now(), source: "muscle-memory", ...e }); } catch { /* */ } }
 let livePanel: any = null; // set in activate(); lets state changes re-render the panel LIVE (interactive mirror)
 function writeUiState(s: Record<string, unknown>) { try { ensureDir(); writeFileSync(UI_STATE, JSON.stringify({ ...readUiState(), ...s, ts: Date.now() })); } catch { /* */ } try { livePanel?.update(); } catch { /* */ } }
 function readUiState(): Record<string, any> { try { return existsSync(UI_STATE) ? JSON.parse(readFileSync(UI_STATE, "utf8")) : {}; } catch { return {}; } }
 function loadUiEvents(n = 8): UiEvent[] { if (!existsSync(UI_EVENTS)) return []; const out: UiEvent[] = []; for (const l of readFileSync(UI_EVENTS, "utf8").trim().split("\n")) { if (!l) continue; try { out.push(JSON.parse(l)); } catch { /* */ } } return out.slice(-n); }
+function reflectSignature(ev: { digest: string; convs: number; items: number }): string { return hash(`${ev.convs}\n${ev.items}\n${ev.digest}`); }
+function loadHandledReflects(): Record<string, { ts: number; route: string }> { try { return existsSync(REFLECT_HANDLED) ? JSON.parse(readFileSync(REFLECT_HANDLED, "utf8")) : {}; } catch { return {}; } }
+function markHandledReflect(sig: string, route: string) { try { ensureDir(); const h = loadHandledReflects(); h[sig] = { ts: Date.now(), route }; writeFileSync(REFLECT_HANDLED, JSON.stringify(h, null, 2)); } catch { /* */ } }
 
 /** Hermes-style compact summary of a review's WRITE actions (finished, not thinking). */
 export function summarizeReflectActions(events: Array<{ phase: string; summary: string }>, mode: "compact" | "verbose" = "compact"): string {
-  const writes = events.filter((e) => ["skill_created", "skill_updated", "skill_staged", "memory_pref_injected", "noise_rejected"].includes(e.phase));
+  const primaryPhases = ["skill_created", "skill_updated", "skill_staged", "skill_graduated", "skill_retired"];
+  const writes = events.filter((e) => [...primaryPhases, "skill_review", "memory_pref_injected", "noise_rejected"].includes(e.phase));
   if (!writes.length) { const last = events[events.length - 1]; return `💾 muscle-memory review: ${last ? last.summary : "nothing to save"}`; }
-  const main = writes.filter((w) => ["skill_created", "skill_updated", "skill_staged"].includes(w.phase)).map((w) => w.summary);
-  const extras = mode === "verbose" ? writes.filter((w) => !["skill_created", "skill_updated", "skill_staged"].includes(w.phase)).map((w) => w.summary) : [];
+  const main = writes.filter((w) => primaryPhases.includes(w.phase)).map((w) => w.summary);
+  const extras = mode === "verbose" ? writes.filter((w) => !primaryPhases.includes(w.phase)).map((w) => w.summary) : [];
   return `💾 muscle-memory review: ${[...main, ...extras].join(" · ") || writes[0].summary}`;
 }
 
@@ -1098,6 +1181,9 @@ export function summarizeReflectActions(events: Array<{ phase: string; summary: 
 export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
   const mode = process.env.MM_REFLECT === "auto" ? "auto" : process.env.MM_REFLECT === "staged" ? "staged" : "off";
   if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
+  const ageMs = typeof state.ts === "number" ? Date.now() - state.ts : 0;
+  const ttlMs = state.phase === "protected" ? Infinity : state.phase === "idle" ? 60_000 : state.phase === "done" ? 5 * 60_000 : 0;
+  if (ttlMs && ageMs > ttlMs) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
   switch (state.phase) {
     case "reviewing": return [`💾 muscle-memory · 🔍 reviewing ${state.detail || "evidence…"}`];
     case "routing": return [`💾 muscle-memory · 🧭 ${state.route || "routing…"}`];
@@ -1118,6 +1204,71 @@ export function renderMeshFeed(entries: Array<{ agent?: string; type?: string; s
   return entries.map((e) => `${(e.agent || "?").padEnd(5)} ${String(e.type || "").replace("skill_", "")} ${e.skill || ""}${e.route ? ` · ${e.route}` : ""}${e.signals ? ` · ${e.signals} signals` : ""}`.trim());
 }
 
+function isHighConfidenceCreate(res: ReviewResult, ev: { items: number; convs: number }): boolean {
+  if (res.action !== "create") return false;
+  const top = res.matches?.[0];
+  const cleanRoute = !pickUpdateTarget(res.matches || [], 18);
+  const richDraft = !!res.description && res.description.length >= 80 && /##\s+Pitfalls/i.test(res.body || "") && /##\s+Verification/i.test(res.body || "");
+  return ev.convs >= 3 && ev.items >= 1 && cleanRoute && richDraft;
+}
+
+function graduateStagedSkill(name: string, ctx?: any): string {
+  const nm = slug(name);
+  if (!nm) throw new Error("name required");
+  const srcDir = join(STAGED_DIR, nm);
+  const src = join(srcDir, "SKILL.md");
+  if (!existsSync(src)) throw new Error(`no staged skill '${nm}'`);
+  const content = readFileSync(src, "utf8");
+  const desc = (content.match(/^description:\s*(.+)$/im)?.[1] || "").trim();
+  const body = content.replace(/^---[\s\S]*?\n---\s*\n?/, "");
+  const lint = lintSkillDraft({ name: nm, description: desc, body });
+  if (!lint.ok) throw new Error(`linter blocked: ${lint.issues.join("; ")}`);
+  const sec = scanSkillContent(body); if (!sec.ok) throw new Error(`security blocked: ${sec.issues.join("; ")}`);
+  const dstRoot = agentSkillsDir(ctx);
+  const dst = writeSkill(dstRoot, nm, content.includes(MM_TAG) ? content : content + `\n<!-- ${MM_TAG}: graduated ${new Date().toISOString().slice(0, 10)} -->\n`);
+  mkdirSync(STAGED_RETIRED_DIR, { recursive: true });
+  try { renameSync(srcDir, join(STAGED_RETIRED_DIR, `${nm}-graduated-${Date.now()}`)); } catch { /* best-effort quarantine */ }
+  appendUiEvent({ phase: "skill_graduated", summary: `graduated '${nm}'`, skill: nm, action: "graduate", route: "manual" });
+  appendMeshFeed({ type: "skill_graduated", skill: nm, route: "GRADUATE", signals: 0 });
+  writeUiState({ phase: "done", last: `graduated '${nm}'`, route: "GRADUATE · live" });
+  return dst;
+}
+
+function catalogPrivacyScan(content: string): { ok: boolean; issues: string[] } {
+  const issues: string[] = [];
+  const body = content.replace(/^---[\s\S]*?\n---\s*\n?/, "");
+  const sec = scanSkillContent(content); if (!sec.ok) issues.push(...sec.issues.map((i) => `security: ${i}`));
+  if (/\/Users\/[A-Za-z0-9._-]+\//.test(content) || /\/home\/[A-Za-z0-9._-]+\//.test(content)) issues.push("private absolute user path");
+  if (/lc-local-backend/.test(content) || /~\/\.letta\/agents\//.test(content) || /~\/\.agents\/agents\//.test(content)) issues.push("local harness path");
+  if (/\b(?:im8store\.myshopify\.com|prenetics|northflank|agent-71b0883e|chan2saucy|adrianchan)\b/i.test(content)) issues.push("private org/user/agent identifier");
+  if (/references\/evidence|receipt json|final-gate-result\.json/i.test(body) && /\/Users\//.test(content)) issues.push("private evidence reference");
+  return { ok: issues.length === 0, issues: [...new Set(issues)] };
+}
+
+function publishSkillToCatalog(name: string, ctx?: any): string {
+  const nm = slug(name);
+  if (!nm) throw new Error("name required");
+  const d = scanDirs(ctx).find((x) => existsSync(join(x, nm, "SKILL.md")));
+  if (!d) throw new Error(`no active skill '${nm}'`);
+  const src = join(d, nm, "SKILL.md");
+  if (!existsSync(src)) throw new Error(`no SKILL.md for '${nm}'`);
+  const content = readFileSync(src, "utf8");
+  const desc = (content.match(/^description:\s*(.+)$/im)?.[1] || "").trim();
+  const body = content.replace(/^---[\s\S]*?\n---\s*\n?/, "");
+  const lint = lintSkillDraft({ name: nm, description: desc, body });
+  if (!lint.ok) throw new Error(`linter blocked: ${lint.issues.join("; ")}`);
+  const priv = catalogPrivacyScan(content);
+  if (!priv.ok) throw new Error(`privacy blocked: ${priv.issues.join("; ")}`);
+  const dstDir = join(GLOBAL_SKILLS_DIR, nm);
+  mkdirSync(dstDir, { recursive: true });
+  const published = content.includes(MM_TAG) ? content + `\n<!-- ${MM_TAG}: published ${new Date().toISOString().slice(0, 10)}; catalog=global -->\n` : content + `\n<!-- ${MM_TAG}: published ${new Date().toISOString().slice(0, 10)}; catalog=global -->\n`;
+  writeFileSync(join(dstDir, "SKILL.md"), published);
+  appendUiEvent({ phase: "skill_published", summary: `published '${nm}' to custom skill catalog`, skill: nm, action: "publish", route: "global-catalog" });
+  appendMeshFeed({ type: "skill_published", skill: nm, route: "PUBLISH", signals: 0 });
+  writeUiState({ phase: "done", last: `published '${nm}' to catalog`, route: "PUBLISH · catalog" });
+  return join(dstDir, "SKILL.md");
+}
+
 /** Fork-based reviewer author: the model authors a skill in a hidden conversation. Guarded —
  * any failure returns "" and the caller treats it as "nothing to save". (Same pattern as the autopilot fork.) */
 function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<string> {
@@ -1136,6 +1287,9 @@ function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<stri
  * routing + gates → write (staged by default; live in auto mode). Reversible + receipted. The surpass, autonomous. */
 export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | "auto"; minItems?: number; authorFn?: (s: string, u: string) => Promise<string> } = {}): Promise<ReviewResult & { wrote?: string }> {
   const dirs = scanDirs(ctx);
+  // In staged mode, staged skills are part of the dedupe surface. Otherwise repeated manual reflects
+  // can spray near-duplicate staged siblings before review/graduation (live dogfood catch).
+  const reviewDirs = config.mode === "auto" ? dirs : [...dirs, STAGED_DIR];
   const ev = buildCrossConversationEvidence(loadExperience());
   appendUiEvent({ phase: "review_started", summary: `reviewing ${ev.convs} sessions / ${ev.items} durable signals` }); writeUiState({ phase: "reviewing", detail: `${ev.convs} sessions / ${ev.items} signals` });
   if (ev.items < (config.minItems ?? 2)) { appendUiEvent({ phase: "reflect_none", summary: `nothing to save yet (${ev.items} signals)` }); writeUiState({ phase: "idle", last: "nothing to save yet" }); return { action: "none", reason: `only ${ev.items} cross-session signals (need ≥${config.minItems ?? 2})` }; }
@@ -1143,18 +1297,27 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
   const prefs = retrievePreferences(ev.digest, process.env.MEMORY_DIR);
   const digest = ev.digest + (prefs.length ? `\n\nUSER PREFERENCES (from this agent's memory — bake the relevant ones into the skill's guidance):\n${prefs.map((p) => `- ${p}`).join("\n")}` : "");
   // LIVE MIRROR: surface the route + writing phase during the (long) author call, so the panel animates.
-  const preTgt = pickUpdateTarget(searchSkills(dirs, digest, 3), 18);
+  const preTgt = pickUpdateTarget(searchSkills(reviewDirs, digest, 3), 18);
+  const routeKey = preTgt ? `UPDATE:${preTgt.name}` : "CREATE";
+  const sig = reflectSignature(ev);
+  if (loadHandledReflects()[sig]) {
+    const summary = `already reflected ${routeKey.toLowerCase()} for this evidence signature`;
+    appendUiEvent({ phase: "reflect_none", summary });
+    writeUiState({ phase: "idle", last: summary, route: "SKIP · handled" });
+    return { action: "none", reason: summary };
+  }
   writeUiState({ phase: "routing", route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE (new skill)" });
   appendUiEvent({ phase: "review_planned", summary: preTgt ? `route UPDATE → ${preTgt.name}` : "route CREATE — no existing skill safely covers this" });
   writeUiState({ phase: "writing", skill: preTgt?.name, route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE" });
   const author = config.authorFn || reviewForkAuthor(ctx);
-  const res = await reviewAndAuthor(digest, dirs, author);
+  const res = await reviewAndAuthor(digest, reviewDirs, author);
   if ((res.action === "create" || res.action === "update") && res.name && res.content) {
     const live = config.mode === "auto";
-    const dir = live ? agentSkillsDir(ctx) : STAGED_DIR;
-    const tagged = res.content.includes(MM_TAG) ? res.content : res.content + `\n<!-- ${MM_TAG}: reflective ${new Date().toISOString().slice(0, 10)}; action=${res.action}; convs=${ev.convs} -->\n`;
+    const graduate = live || res.action === "update" || isHighConfidenceCreate(res, ev);
+    const dir = graduate ? agentSkillsDir(ctx) : STAGED_DIR;
+    const tagged = res.content.includes(MM_TAG) ? res.content : res.content + `\n<!-- ${MM_TAG}: reflective ${new Date().toISOString().slice(0, 10)}; action=${res.action}; convs=${ev.convs}; ${graduate ? "graduated=true" : "staged=true"} -->\n`;
     try {
-      const oldContent = res.action === "update" && res.updateTarget ? (() => { const d = dirs.find((x) => existsSync(join(x, res.updateTarget!, "SKILL.md"))); return d ? readSkill(d, res.updateTarget!) : undefined; })() : undefined;
+      const oldContent = res.action === "update" && res.updateTarget ? (() => { const d = reviewDirs.find((x) => existsSync(join(x, res.updateTarget!, "SKILL.md"))); return d ? readSkill(d, res.updateTarget!) : undefined; })() : undefined;
       writeSkill(dir, res.name, tagged);
       // EVIDENCE-PACK MANIFEST: provenance next to the skill (not model vibes — a git object).
       const manifest = buildEvidenceManifest({ action: res.action, skill: res.name, updateTarget: res.updateTarget, convs: ev.convs, signals: ev.items, memfsHits: res.matches || [], preferences: prefs, rejected: ev.rejected, newContent: tagged, oldContent });
@@ -1163,22 +1326,24 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
       ensureDir(); mkdirSync(RECEIPTS_DIR, { recursive: true });
       writeFileSync(join(RECEIPTS_DIR, `reflect-${Date.now()}.json`), JSON.stringify({ action: res.action, name: res.name, updateTarget: res.updateTarget, convs: ev.convs, items: ev.items, prefsInjected: prefs.length, rejected: ev.rejected.length, dir, ts: Date.now() }, null, 2));
       // v3.3 VISIBLE SUMMARY: Hermes-style finished-action events (no chain-of-thought).
-      const phase = res.action === "update" ? "skill_updated" : (live ? "skill_created" : "skill_staged");
-      const verb = res.action === "update" ? (live ? "updated" : "staged update to") : (live ? "created" : "staged");
+      const phase = graduate ? "skill_graduated" : "skill_staged";
+      const verb = graduate ? "graduated" : (res.action === "update" ? "staged update to" : "staged");
       const summary = `${verb} '${res.name}' (${res.action === "update" ? "update-first" : "new"}, ${ev.convs} sessions/${ev.items} signals)`;
       appendUiEvent({ phase, summary, skill: res.name, action: res.action, route: res.updateTarget ? `update ${res.updateTarget}` : "create" });
-      appendMeshFeed({ type: phase, skill: res.name, route: res.action.toUpperCase(), signals: ev.items }); // cross-agent feed (see Mack + Kev distilling)
+      appendMeshFeed({ type: phase, skill: res.name, route: graduate ? "GRADUATE" : res.action.toUpperCase(), signals: ev.items }); // cross-agent feed (see Mack + Kev distilling)
+      markHandledReflect(sig, routeKey);
       appendUiEvent({ phase: "evidence_manifest_written", summary: "wrote evidence manifest" });
       if (ev.rejected.length) appendUiEvent({ phase: "noise_rejected", summary: `rejected ${ev.rejected.length} env-noise items` });
       if (prefs.length) appendUiEvent({ phase: "memory_pref_injected", summary: `injected ${prefs.length} user preferences` });
-      writeUiState({ phase: "done", last: summary, route: `${res.action.toUpperCase()}${res.updateTarget ? " " + res.updateTarget : ""} · ${live ? "live" : "staged"}` });
+      writeUiState({ phase: "done", last: summary, route: `${graduate ? "GRADUATE" : res.action.toUpperCase()}${res.updateTarget ? " " + res.updateTarget : ""} · ${graduate ? "live" : "staged"}` });
       return { ...res, wrote: join(dir, res.name) };
     } catch (e: any) { appendUiEvent({ phase: "reflect_error", summary: `write failed: ${String(e?.message ?? e).slice(0, 80)}` }); return { ...res, reason: String(e?.message ?? e) }; }
   }
   if (res.action === "reject") {
     const safe = /\bsecurity:/i.test(res.reason || ""); // a security block is the gate PROTECTING you, not a failure
-    appendUiEvent({ phase: safe ? "blocked_unsafe" : "reflect_error", summary: safe ? `🛡️ blocked unsafe content (safe): ${res.reason}` : `review rejected: ${res.reason}` });
-    writeUiState({ phase: safe ? "protected" : "blocked", last: safe ? "blocked unsafe content (safe)" : `rejected: ${res.reason}` });
+    markHandledReflect(sig, routeKey);
+    appendUiEvent({ phase: safe ? "blocked_unsafe" : "reflect_none", summary: safe ? `🛡️ blocked unsafe content (safe): ${res.reason}` : `draft rejected; nothing saved (${res.reason})` });
+    writeUiState({ phase: safe ? "protected" : "idle", last: safe ? "blocked unsafe content (safe)" : `draft rejected; nothing saved`, route: safe ? "BLOCKED · protected" : "SKIP · rejected-draft" });
   }
   else { appendUiEvent({ phase: "reflect_none", summary: "nothing durable to save" }); writeUiState({ phase: "idle", last: "nothing to save" }); }
   return res;
@@ -1186,7 +1351,7 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
 
 // Test hook (deterministic validation without live data).
 export const __mm = { commandTemplate, fingerprint, detect, detectTemplates, detectSequences, maturityScore, MM, loadRows, dedupCheck, slug, draftSkillFromCandidate, candidateName, candidateDescription, curateManagedSkills, managedSkillUsage,
-  streamChunkText, isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview,
+  streamChunkText, isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview, graduateStagedSkill, publishSkillToCatalog, catalogPrivacyScan, isHighConfidenceCreate, runAutonomousPrune,
   buildEvidenceManifest, retrievePreferences, coverageMap, churnSignal, summarizeReflectActions, renderMuscleMemoryPanel, loadMeshFeed, renderMeshFeed,
   buildRegistry, curatorPass, skillVerbs, specDrift, lifecycleTransition, CURATOR, setPinned, isPinned, buildDefenses, preActionDefense,
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
@@ -1277,7 +1442,11 @@ export default function activate(letta: any) {
       // v3.1 REFLECTIVE REVIEW trigger — opt-in (MM_REFLECT=staged|auto): the cross-conversation
       // reviewer authors/updates a class-level skill autonomously at session end. Default OFF.
       const rfMode = process.env.MM_REFLECT;
-      if (rfMode === "staged" || rfMode === "auto") { runReflectiveReview(ctx ?? { agentId: event?.agentId }, { mode: rfMode }).then(() => { try { panel?.update(); } catch { /* */ } }).catch(() => { /* reflection must never break the app */ }); }
+      if (rfMode === "staged" || rfMode === "auto") {
+        runReflectiveReview(ctx ?? { agentId: event?.agentId }, { mode: rfMode })
+          .then(() => { runAutonomousPrune(ctx ?? { agentId: event?.agentId }, { maxRetire: 1 }); try { panel?.update(); } catch { /* */ } })
+          .catch(() => { /* reflection/prune must never break the app */ });
+      }
     }));
   }
 
@@ -1368,7 +1537,7 @@ export default function activate(letta: any) {
     const writeParams = {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["create_from_candidate", "create", "patch", "edit_full", "write_file", "remove_file", "retire", "restore", "pin", "unpin", "autopilot_run", "reflect"], description: "mutating operation to perform" },
+        action: { type: "string", enum: ["create_from_candidate", "create", "patch", "edit_full", "write_file", "remove_file", "retire", "restore", "pin", "unpin", "autopilot_run", "reflect", "graduate"], description: "mutating operation to perform" },
         mode: { type: "string", enum: ["staged", "auto"], description: "autopilot mode — for autopilot_run (staged=draft+1-tap, auto=graduate-on-gate)" },
         name: { type: "string", description: "skill name (gerund, lowercase-hyphen) — for create/patch/retire" },
         description: { type: "string", description: "skill description incl. trigger phrases — for create" },
@@ -1428,7 +1597,7 @@ export default function activate(letta: any) {
         if (a.action === "reflect_plan") {
           // v3.1 DRY-RUN: show the cross-conversation evidence + the MemFS update-first routing (no model call, no write).
           const ev = buildCrossConversationEvidence(loadExperience());
-          const top = searchSkills(dirs, ev.digest, 3);
+          const top = searchSkills([...dirs, STAGED_DIR], ev.digest, 3);
           const tgt = pickUpdateTarget(top, 18);
           const route = tgt ? `UPDATE-FIRST → "${tgt.name}" (score ${tgt.score}, ${tgt.matched} distinctive terms, dominant)` : "CREATE (no existing skill safely covers this — matches too weak/ambiguous/tied)";
           return `reflective review preview — ${ev.convs} sessions, ${ev.items} durable signals\nrouting: ${route}\ntop matches: ${top.map((t) => `${t.name}(s${t.score}/m${t.matched})`).join(", ") || "none"}\n\n${ev.digest.slice(0, 700)}`;
@@ -1486,7 +1655,13 @@ export default function activate(letta: any) {
           // v3.1 reflective review: cross-conversation evidence → forked reviewer → update-first + gates → write.
           const r = await runReflectiveReview(ctx, { mode: a.mode === "auto" ? "auto" : "staged" });
           if (r.action === "none" || r.action === "reject") return `reflect: ${r.action} — ${r.reason || ""}`;
-          return `reflect: ${r.action} skill "${r.name}"${r.updateTarget ? ` (updated existing — anti-bloat)` : ""} → ${r.wrote || "(write failed)"}`;
+          const graduated = !!r.wrote && !String(r.wrote).startsWith(STAGED_DIR);
+          return `reflect: ${r.action} skill "${r.name}"${r.updateTarget ? ` (updated existing — anti-bloat)` : ""}${graduated ? " (graduated)" : ""} → ${r.wrote || "(write failed)"}`;
+        }
+        if (a.action === "graduate") {
+          if (!a.name) return { status: "error", content: "name required" };
+          const p = graduateStagedSkill(String(a.name), ctx);
+          return `graduated '${slug(a.name)}' -> ${p}`;
         }
         if (a.action === "pin") {
           if (!a.name) return { status: "error", content: "name required" };
@@ -1575,6 +1750,45 @@ export default function activate(letta: any) {
       }
     };
 
+    const lifecycleParams = {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["reflect", "graduate", "publish", "prune"], description: "Safe no-approval lifecycle action" },
+        mode: { type: "string", enum: ["staged", "auto"], description: "reflect mode; staged still auto-graduates trusted updates/high-confidence creates" },
+        name: { type: "string", description: "staged skill name — for graduate" }
+      },
+      required: ["action"]
+    };
+
+    const lifecycleRun = async (ctx: any) => {
+      const a = ctx?.args || {};
+      try {
+        if (a.action === "reflect") {
+          const r = await runReflectiveReview(ctx, { mode: a.mode === "auto" ? "auto" : "staged" });
+          if (r.action === "none" || r.action === "reject") return `reflect: ${r.action} — ${r.reason || ""}`;
+          const graduated = !!r.wrote && !String(r.wrote).startsWith(STAGED_DIR);
+          return `reflect: ${r.action} skill "${r.name}"${r.updateTarget ? ` (updated existing — anti-bloat)` : ""}${graduated ? " (graduated)" : ""} → ${r.wrote || "(write failed)"}`;
+        }
+        if (a.action === "graduate") {
+          if (!a.name) return { status: "error", content: "name required" };
+          const p = graduateStagedSkill(String(a.name), ctx);
+          return `graduated '${slug(a.name)}' -> ${p}`;
+        }
+        if (a.action === "publish") {
+          if (!a.name) return { status: "error", content: "name required" };
+          const p = publishSkillToCatalog(String(a.name), ctx);
+          return `published '${slug(a.name)}' -> ${p}`;
+        }
+        if (a.action === "prune") {
+          const r = runAutonomousPrune(ctx, { maxRetire: 1 });
+          return `prune: retired ${r.retired.length} ${JSON.stringify(r.retired)}, flagged ${r.flagged.length}, kept ${r.kept.length}`;
+        }
+        return { status: "error", content: "unknown lifecycle action" };
+      } catch (e: any) {
+        return { status: "error", content: String(e?.message ?? e) };
+      }
+    };
+
     disposers.push(letta.tools.register({
       name: "muscle_memory_skill_read",
       description: "Read-only muscle-memory lifecycle actions: list mature candidates, draft SKILL.md text, load managed skills, list managed skills, and curate usage. Use this before any write/graduation action.",
@@ -1589,6 +1803,14 @@ export default function activate(letta: any) {
       parameters: writeParams,
       requiresApproval: true,
       async run(ctx: any) { return writeRun(ctx); },
+    }));
+
+    disposers.push(letta.tools.register({
+      name: "muscle_memory_lifecycle_run",
+      description: "No-approval safe muscle-memory lifecycle actions: reflect, graduate staged skills, and conservative reversible prune. Broad manual edits remain in approval-gated muscle_memory_skill_write.",
+      parameters: lifecycleParams,
+      requiresApproval: false,
+      async run(ctx: any) { return lifecycleRun(ctx); },
     }));
   }
 

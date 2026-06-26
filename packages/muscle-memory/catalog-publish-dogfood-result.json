@@ -1,0 +1,106 @@
+{
+  "generatedAt": "2026-06-26T17:27:47.338Z",
+  "pass": true,
+  "checks": {
+    "lifecycleToolNoApproval": true,
+    "publishedPortableSkill": true,
+    "copiedOnlySkillMd": true,
+    "catalogContentPrivacyClean": true,
+    "blockedPrivateSkill": true,
+    "uiPublishedEvent": true,
+    "meshPublishedEvent": true
+  },
+  "observed": {
+    "published": "published 'validating-portable-catalog-skills' -> /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-YiVCgA/global-skills/validating-portable-catalog-skills/SKILL.md",
+    "blocked": {
+      "status": "error",
+      "content": "privacy blocked: private absolute user path; private org/user/agent identifier"
+    },
+    "catalogSkill": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-YiVCgA/global-skills/validating-portable-catalog-skills/SKILL.md",
+    "uiEvents": [
+      {
+        "ts": 1782494867336,
+        "source": "muscle-memory",
+        "phase": "skill_published",
+        "summary": "published 'validating-portable-catalog-skills' to custom skill catalog",
+        "skill": "validating-portable-catalog-skills",
+        "action": "publish",
+        "route": "global-catalog"
+      }
+    ],
+    "feed": [
+      {
+        "agent": "agent",
+        "ts": 1782494864079,
+        "source": "muscle-memory",
+        "type": "skill_graduated",
+        "skill": "validating-shopify-visual-claims-with-receipts",
+        "route": "GRADUATE",
+        "signals": 4
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494865157,
+        "source": "muscle-memory",
+        "type": "skill_graduated",
+        "skill": "validating-loop-workflows",
+        "route": "GRADUATE",
+        "signals": 1
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494865176,
+        "source": "muscle-memory",
+        "type": "skill_graduated",
+        "skill": "capturing-aurora-renderer-proofs",
+        "route": "GRADUATE",
+        "signals": 1
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494865190,
+        "source": "muscle-memory",
+        "type": "skill_staged",
+        "skill": "validating-weak-visual-receipts",
+        "route": "CREATE",
+        "signals": 1
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494865191,
+        "source": "muscle-memory",
+        "type": "skill_graduated",
+        "skill": "validating-weak-visual-receipts",
+        "route": "GRADUATE",
+        "signals": 0
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494865192,
+        "source": "muscle-memory",
+        "type": "skill_retired",
+        "skill": "old-unused-loop-prune",
+        "route": "AUTO-PRUNE",
+        "signals": 0
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494866270,
+        "source": "muscle-memory",
+        "type": "skill_graduated",
+        "skill": "validating-shopify-visual-claims",
+        "route": "GRADUATE",
+        "signals": 6
+      },
+      {
+        "agent": "agent",
+        "ts": 1782494867336,
+        "source": "muscle-memory",
+        "type": "skill_published",
+        "skill": "validating-portable-catalog-skills",
+        "route": "PUBLISH",
+        "signals": 0
+      }
+    ]
+  }
+}

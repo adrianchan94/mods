@@ -11,11 +11,14 @@ import { tmpdir } from "node:os";
 const STATE = join(tmpdir(), "mm-v31-state-" + process.pid);
 mkdirSync(STATE, { recursive: true });
 process.env.MM_STATE_DIR = STATE;
+process.env.MM_GLOBAL_SKILLS_DIR = join(STATE, "global-skills");
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(tmpdir(), "mm-v31-bundle.mjs");
 execFileSync("npx", ["--yes", "esbuild", join(here, "..", "mods", "index.ts"), "--bundle", "--platform=node", "--format=esm", "--outfile=" + OUT], { stdio: "pipe" });
-const { __mm: M } = await import(OUT + "?t=" + Date.now());
+const imported = await import(OUT + "?t=" + Date.now());
+const { __mm: M } = imported;
+const activate = imported.default;
 let PASS = 0, FAIL = 0;
 const p = (s = "") => console.log(s);
 const hr = (t) => { p("\n" + "─".repeat(70)); p(t); p("─".repeat(70)); };
@@ -49,6 +52,16 @@ const ev = M.buildCrossConversationEvidence(rows);
 ok("digest spans multiple sessions", ev.convs === 3 && /3 sessions/.test(ev.digest));
 ok("captures the real recovered failure (TS2345)", /TS2345/.test(ev.digest));
 ok("DROPS env-noise (command not found: rg)", !/command not found/.test(ev.digest));
+
+
+const highSignalRows = [
+  { ts: 1, conv: "shopify", tool: "visual_receipt", tmpl: "visual_receipt im8health.com 2 viewports 4 selectors", ok: false, err: "desktop annotated screenshot failed" },
+  { ts: 2, conv: "shopify", tool: "im8_claims_lint", tmpl: "im8_claims_lint supplement-copy 0 files", ok: true },
+  { ts: 3, conv: "release", tool: "repo_radar_evidence", tmpl: "repo_radar_evidence kev-duo-dogfood-release-readiness", ok: true }
+];
+const hev = M.buildCrossConversationEvidence(highSignalRows);
+ok("high-signal one-off tools become reflect evidence", hev.items >= 3 && /visual_receipt im8health\.com/.test(hev.digest) && /im8_claims_lint supplement-copy/.test(hev.digest) && /failed\/partial receipt/.test(hev.digest));
+
 
 hr("4 — searchSkills (MemFS keyword retrieval, the update-first engine)");
 const SCOPE = join(tmpdir(), "mm-v31-" + process.pid);
@@ -118,10 +131,153 @@ writeFileSync(join(STATE, "experience.jsonl"), exp.map((r) => JSON.stringify(r))
 writeFileSync(join(STATE, "outcomes.jsonl"), out.map((r) => JSON.stringify(r)).join("\n") + "\n");
 const r6 = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: mock() });
 ok("reflect: produced a write action (create/update)", r6.action === "create" || r6.action === "update");
-ok("reflect: wrote a skill file (staged)", !!r6.wrote && existsSync(join(r6.wrote, "SKILL.md")));
+ok("reflect: wrote a skill file", !!r6.wrote && existsSync(join(r6.wrote, "SKILL.md")));
 ok("reflect: wrote a receipt", existsSync(join(STATE, "receipts")) && readdirSync(join(STATE, "receipts")).some((f) => f.startsWith("reflect-")));
 ok("reflect: wrote an EVIDENCE MANIFEST (provenance)", !!r6.wrote && existsSync(join(r6.wrote, "references", "evidence")) && readdirSync(join(r6.wrote, "references", "evidence")).length > 0);
+// Live dogfood catch: staged backlog must participate in update-first routing, otherwise repeated
+// manual reflects create sibling staged skills instead of updating the current staged candidate.
+const stagedDir = join(STATE, "staged");
+M.writeSkill(stagedDir, "validating-typescript-builds", `---
+name: validating-typescript-builds
+description: Use when recovering and validating TypeScript builds with npx tsc --noEmit after error TS2345 type mismatch; covers Edit <path>.ts fixes, retrying npx tsc, Letta mod package gates, package smoke, and final gate receipts.
+---
+
+## When to use
+- validating mod package builds
+## Procedure
+1. npm test
+## Verification
+- final gate passes
+`);
+const stagedRows = [];
+for (const conv of ["st1", "st2", "st3"]) stagedRows.push({ ts: 7, conv, tool: "Bash", tmpl: "npx tsc --noEmit package smoke final gate", id: `${conv}-staged` });
+writeFileSync(join(STATE, "experience.jsonl"), stagedRows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+writeFileSync(join(STATE, "outcomes.jsonl"), "");
+const r6b = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: mock({ name: "validating-typescript-builds" }) });
+ok("reflect: staged update-first sees existing staged skills (anti-bloat)", r6b.action === "update" && r6b.updateTarget === "validating-typescript-builds" && /validating-typescript-builds$/.test(r6b.wrote || ""));
+// Complete-loop RED: trusted UPDATEs should graduate into the agent-visible skill dir even when reflect mode is staged.
+const modUpdateRows = [];
+for (const conv of ["u1", "u2", "u3"]) modUpdateRows.push({ ts: 10, conv, tool: "Bash", tmpl: "letta mod ctx.args reload backup esbuild validation", id: `${conv}-u` });
+writeFileSync(join(STATE, "experience.jsonl"), modUpdateRows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+writeFileSync(join(STATE, "outcomes.jsonl"), "");
+const beforeActive = readFileSync(join(sd, "editing-letta-mods", "SKILL.md"), "utf8");
+const r6c = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: mock({ name: "editing-letta-mods" }) });
+const afterActive = readFileSync(join(sd, "editing-letta-mods", "SKILL.md"), "utf8");
+ok("reflect: staged UPDATE auto-graduates to active skills dir", r6c.action === "update" && /editing-letta-mods$/.test(r6c.wrote || "") && r6c.wrote === join(sd, "editing-letta-mods") && afterActive !== beforeActive);
+ok("reflect: graduated update writes evidence manifest in active skill", existsSync(join(sd, "editing-letta-mods", "references", "evidence")) && readdirSync(join(sd, "editing-letta-mods", "references", "evidence")).length > 0);
+const r6cRepeat = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: mock({ name: "editing-letta-mods" }) });
+ok("reflect: handled evidence does not re-update the same skill forever", r6cRepeat.action === "none" && /already reflected/.test(r6cRepeat.reason || ""));
+// Complete-loop RED: manual graduate promotes a staged skill into the app-visible skill dir.
+M.writeSkill(stagedDir, "manual-graduate-test", `---
+name: manual-graduate-test
+description: Use when manually promoting a validated staged skill into the active app-visible skill directory.
+---
+
+## When to use
+- promoting a staged skill
+## Procedure
+1. verify gates
+## Verification
+- skill appears active
+<!-- muscle-memory provenance: staged test -->
+`);
+const registeredTools = [];
+const disposers = [];
+const mockLetta = { capabilities: { tools: true, commands: true, events: { tools: true, lifecycle: true }, ui: { panels: true } }, events: { on: () => () => {} }, commands: { register: () => () => {} }, tools: { register: (t) => { registeredTools.push(t); return () => {}; } }, ui: { openPanel: () => ({ update() {}, close() {} }), closePanel() {} } };
+disposers.push(activate(mockLetta));
+const writeTool = registeredTools.find((t) => t.name === "muscle_memory_skill_write");
+const lifecycleTool = registeredTools.find((t) => t.name === "muscle_memory_lifecycle_run");
+ok("permission split: broad write tool stays approval-gated", writeTool?.requiresApproval === true);
+ok("permission split: safe lifecycle tool is no-approval", lifecycleTool?.requiresApproval === false);
+const grad = await lifecycleTool.run({ args: { action: "graduate", name: "manual-graduate-test" } });
+ok("manual graduate action promotes staged skill to active skills dir", /graduated 'manual-graduate-test'/.test(String(grad)) && existsSync(join(sd, "manual-graduate-test", "SKILL.md")) && !existsSync(join(stagedDir, "manual-graduate-test", "SKILL.md")));
+ok("manual graduate action leaves active skill loadable", existsSync(join(sd, "manual-graduate-test", "SKILL.md")) && /manual-graduate-test/.test(readFileSync(join(sd, "manual-graduate-test", "SKILL.md"), "utf8")));
+const pub = await lifecycleTool.run({ args: { action: "publish", name: "manual-graduate-test" } });
+const catalogRoot = join(STATE, "global-skills");
+ok("publish: mirrors sanitized SKILL.md into catalog root", /published 'manual-graduate-test'/.test(String(pub)) && existsSync(join(catalogRoot, "manual-graduate-test", "SKILL.md")));
+ok("publish: does not copy private evidence refs", !existsSync(join(catalogRoot, "manual-graduate-test", "references")));
+M.writeSkill(sd, "private-path-skill", `---\nname: private-path-skill\ndescription: Use when testing publish privacy gates for non-portable local path content.\n---\n\n## Procedure\n1. inspect /Users/chan2saucy/private/repo\n## Verification\n- blocked\n<!-- muscle-memory provenance: private publish test -->\n`);
+const pubPrivate = await lifecycleTool.run({ args: { action: "publish", name: "private-path-skill" } });
+ok("publish: blocks private/local path skills from global catalog", String(pubPrivate?.content || pubPrivate).includes("privacy blocked") && !existsSync(join(catalogRoot, "private-path-skill", "SKILL.md")));
+for (const d of disposers) try { if (typeof d === "function") d(); } catch {}
+// Complete-loop RED: high-confidence creates should auto-graduate; low-confidence creates should stay staged.
+const novelRows = [];
+for (const conv of ["n1", "n2", "n3"]) {
+  novelRows.push({ ts: 20, conv, tool: "Bash", tmpl: "render nebula shader proof pipeline", id: `${conv}-novel-a` });
+  novelRows.push({ ts: 21, conv, tool: "Bash", tmpl: "render nebula shader proof pipeline", id: `${conv}-novel-b` });
+}
+writeFileSync(join(STATE, "experience.jsonl"), novelRows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+writeFileSync(join(STATE, "outcomes.jsonl"), "");
+const highCreate = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: mock({ name: "rendering-nebula-shader-pipelines", raw: `---
+name: rendering-nebula-shader-pipelines
+description: Use when rendering nebula shader proof pipelines with repeated command receipts, artifact checks, and final proof before claiming the visual rendering workflow is ready.
+---
+## When to use
+- rendering nebula shader pipeline workflows
+## Procedure
+1. run the nebula shader proof pipeline
+2. inspect receipts
+## Pitfalls
+- do not claim visual/rendering proof without the matching artifact
+## Verification
+- rendering receipts exist and final gate passes
+` }) });
+ok("reflect: high-confidence CREATE auto-graduates to active skills dir", highCreate.action === "create" && highCreate.wrote === join(sd, "rendering-nebula-shader-pipelines") && existsSync(join(sd, "rendering-nebula-shader-pipelines", "SKILL.md")) && !existsSync(join(stagedDir, "rendering-nebula-shader-pipelines", "SKILL.md")));
+writeFileSync(join(STATE, "experience.jsonl"), [JSON.stringify({ ts: 30, conv: "low1", tool: "visual_receipt", tmpl: "visual_receipt low.example 1 viewports 1 selectors", id: "low-a" }), JSON.stringify({ ts: 31, conv: "low2", tool: "visual_receipt", tmpl: "visual_receipt low.example 1 viewports 1 selectors", id: "low-b" })].join("\n") + "\n");
+const lowCreate = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: mock({ name: "validating-odd-workflows", raw: `---
+name: validating-odd-workflows
+description: Use when validating a rare odd workflow that has only weak evidence and should be reviewed before entering the active app skill library.
+---
+## When to use
+- validating odd workflows
+## Procedure
+1. inspect weak evidence
+## Pitfalls
+- do not over-promote one-off patterns
+## Verification
+- reviewer accepts it
+` }) });
+ok("reflect: low-confidence CREATE remains staged", lowCreate.action === "create" && lowCreate.wrote === join(stagedDir, "validating-odd-workflows") && existsSync(join(stagedDir, "validating-odd-workflows", "SKILL.md")) && !existsSync(join(sd, "validating-odd-workflows", "SKILL.md")));
+writeFileSync(join(STATE, "experience.jsonl"), [JSON.stringify({ ts: 40, conv: "bad1", tool: "visual_receipt", tmpl: "visual_receipt bad-draft.example 1 viewports 1 selectors", id: "bad-a" }), JSON.stringify({ ts: 41, conv: "bad2", tool: "visual_receipt", tmpl: "visual_receipt bad-draft.example 1 viewports 1 selectors", id: "bad-b" })].join("\n") + "\n");
+const badDraft = await M.runReflectiveReview({}, { mode: "staged", minItems: 1, authorFn: async () => "---\nname: \ndescription: This draft is intentionally invalid and should not pin the panel as blocked.\n---\n## Procedure\n1. invalid\n## Verification\n- rejected\n" });
+const badState = JSON.parse(readFileSync(join(STATE, "ui-state.json"), "utf8"));
+ok("reflect: invalid draft rejection is non-sticky idle, not blocked", badDraft.action === "reject" && badState.phase === "idle" && /draft rejected/.test(badState.last || ""));
 ok("reflect: low evidence → none", (await M.runReflectiveReview({}, { mode: "staged", minItems: 999, authorFn: mock() })).action === "none");
+
+// Complete-loop RED: autonomous prune forgets only stale, unused, managed, unpinned skills.
+const oldTs = Date.now() - 31 * 86400000;
+const mkPruneSkill = (name, managed = true) => M.writeSkill(sd, name, `---
+name: ${name}
+description: Use when testing autonomous prune guards for managed muscle-memory skills in the active app skill directory.
+---
+
+## When to use
+- prune testing
+## Procedure
+1. inspect usage
+## Verification
+- quarantine is reversible
+${managed ? "<!-- muscle-memory provenance: prune test -->" : ""}
+`);
+mkPruneSkill("old-unused-prune-me", true);
+mkPruneSkill("old-unused-prune-me-too", true);
+mkPruneSkill("old-pinned-keep", true);
+mkPruneSkill("old-used-keep", true);
+mkPruneSkill("hand-authored-keep", false);
+writeFileSync(join(STATE, "skill-usage.json"), JSON.stringify({
+  "old-unused-prune-me": { created: oldTs, uses: 0, state: "active" },
+  "old-unused-prune-me-too": { created: oldTs, uses: 0, state: "active" },
+  "old-pinned-keep": { created: oldTs, uses: 0, pinned: true, state: "active" },
+  "old-used-keep": { created: oldTs, uses: 2, lastActivity: Date.now(), state: "active" },
+  "hand-authored-keep": { created: oldTs, uses: 0, state: "active" }
+}, null, 2));
+const prune = typeof M.runAutonomousPrune === "function" ? M.runAutonomousPrune({}, { maxRetire: 1 }) : null;
+ok("auto-prune: function exists", !!prune);
+ok("auto-prune: retires exactly one stale managed unpinned unused skill", !!prune && prune.retired.length === 1 && prune.retired[0].startsWith("old-unused-prune-me") && !existsSync(join(sd, prune.retired[0], "SKILL.md")));
+ok("auto-prune: cap prevents mass purge", !!prune && existsSync(join(sd, "old-unused-prune-me-too", "SKILL.md")));
+ok("auto-prune: never retires pinned/used/hand-authored skills", existsSync(join(sd, "old-pinned-keep", "SKILL.md")) && existsSync(join(sd, "old-used-keep", "SKILL.md")) && existsSync(join(sd, "hand-authored-keep", "SKILL.md")));
+ok("auto-prune: reversible quarantine exists", !!prune && prune.retiredPaths.length === 1 && existsSync(prune.retiredPaths[0]));
+ok("auto-prune: emits skill_retired mesh/feed event", !!prune && M.loadMeshFeed(20).some((e) => e.type === "skill_retired" && e.skill === prune.retired[0]));
 
 hr("7 — v3.2 immaculate (manifests, coverage, persona retrieval, churn)");
 const manifest = M.buildEvidenceManifest({ action: "update", skill: "editing-letta-mods", updateTarget: "editing-letta-mods", convs: 3, signals: 5, memfsHits: [{ name: "editing-letta-mods", score: 40, matched: 4 }], preferences: ["prefers concise output"], rejected: [{ item: "command not found: rg", reason: "env-noise" }], newContent: "new", oldContent: "old" });
@@ -150,6 +306,9 @@ ok("panel shows 'watching' when reflect on (idle)", M.renderMuscleMemoryPanel({}
 const doneLines = M.renderMuscleMemoryPanel({ phase: "done", last: "updated editing-letta-mods-safely", route: "UPDATE · staged" });
 ok("panel uses FULL 'muscle-memory' branding (never abbreviated 'MM')", doneLines[0].includes("💾 muscle-memory") && !doneLines.join("\n").includes("💾 MM "));
 ok("panel LIVE-mirrors skill-dev phases (reviewing/routing/writing)", M.renderMuscleMemoryPanel({ phase: "reviewing", detail: "3 sessions" })[0].includes("🔍") && M.renderMuscleMemoryPanel({ phase: "routing", route: "UPDATE → x" })[0].includes("🧭") && M.renderMuscleMemoryPanel({ phase: "writing", skill: "x" })[0].includes("✍️"));
+ok("panel TTL: success states decay back to watching", M.renderMuscleMemoryPanel({ phase: "done", last: "published 'x'", ts: Date.now() - 6 * 60_000 })[0].includes("watching"));
+ok("panel TTL: fresh success stays visible", M.renderMuscleMemoryPanel({ phase: "done", last: "published 'x'", ts: Date.now() })[0].includes("published 'x'"));
+ok("panel TTL: stale no-save idle decays quickly", M.renderMuscleMemoryPanel({ phase: "idle", last: "nothing to save", ts: Date.now() - 90_000 })[0].includes("watching"));
 ok("panel: security block renders as 🛡️ safe, not ⚠️ error", M.renderMuscleMemoryPanel({ phase: "protected", last: "blocked unsafe content (safe)" })[0].includes("🛡️") && !M.renderMuscleMemoryPanel({ phase: "protected" })[0].includes("⚠️"));
 ok("summary: staged write → Hermes-style line", M.summarizeReflectActions([{ phase: "skill_staged", summary: "staged 'foo' (new, 3 sessions/5 signals)" }]).startsWith("💾 muscle-memory review:"));
 ok("summary: update with extras (verbose)", M.summarizeReflectActions([{ phase: "skill_updated", summary: "updated 'foo'" }, { phase: "noise_rejected", summary: "rejected 2 env-noise items" }], "verbose").includes("rejected 2"));

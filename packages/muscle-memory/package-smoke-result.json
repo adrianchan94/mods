@@ -1,0 +1,67 @@
+{
+  "generatedAt": "2026-06-26T17:27:49.643Z",
+  "pass": true,
+  "tmp": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg",
+  "tarball": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/pack/letta-ai-muscle-memory-0.3.1.tgz",
+  "requiredPresent": {
+    "package.json": true,
+    "mods/index.ts": true,
+    "README.md": true,
+    "HOMERUN-SCORECARD.md": true,
+    "homerun-scorecard-result.json": true,
+    "final-gate-result.json": true,
+    "kev-domain-dogfood-result.json": true,
+    "docs/kev-domain-dogfood-skill.md": true,
+    "scripts/kev-domain-dogfood.mjs": true,
+    "scripts/final-gate.mjs": true,
+    "scripts/scorecard.mjs": true
+  },
+  "behavior": {
+    "fingerprintTemplate": "visual_receipt im8health.com 2 viewports 2 selectors",
+    "handlerCapturedTemplate": true
+  },
+  "steps": [
+    {
+      "name": "npm pack",
+      "cmd": "npm pack --pack-destination /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/pack --silent",
+      "cwd": "/Users/chan2saucy/work/kevos-lab/mack/mods-repo/packages/muscle-memory",
+      "exitCode": 0,
+      "durationMs": 215,
+      "outputTail": "letta-ai-muscle-memory-0.3.1.tgz\n"
+    },
+    {
+      "name": "tarball exists",
+      "exitCode": 0,
+      "durationMs": 0,
+      "outputTail": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/pack/letta-ai-muscle-memory-0.3.1.tgz"
+    },
+    {
+      "name": "npm install tarball",
+      "cmd": "npm install --silent /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/pack/letta-ai-muscle-memory-0.3.1.tgz",
+      "cwd": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/consumer",
+      "exitCode": 0,
+      "durationMs": 958,
+      "outputTail": ""
+    },
+    {
+      "name": "required installed files",
+      "exitCode": 0,
+      "durationMs": 0,
+      "outputTail": "{\n  \"package.json\": true,\n  \"mods/index.ts\": true,\n  \"README.md\": true,\n  \"HOMERUN-SCORECARD.md\": true,\n  \"homerun-scorecard-result.json\": true,\n  \"final-gate-result.json\": true,\n  \"kev-domain-dogfood-result.json\": true,\n  \"docs/kev-domain-dogfood-skill.md\": true,\n  \"scripts/kev-domain-dogfood.mjs\": true,\n  \"scripts/final-gate.mjs\": true,\n  \"scripts/scorecard.mjs\": true\n}"
+    },
+    {
+      "name": "bundle installed mod",
+      "cmd": "npx --yes esbuild /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/consumer/node_modules/@letta-ai/muscle-memory/mods/index.ts --bundle --platform=node --format=esm --outfile=/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/installed-mod.mjs",
+      "cwd": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/consumer",
+      "exitCode": 0,
+      "durationMs": 970,
+      "outputTail": "\n  ...791dxqlgrsyg0r0000gn/T/mm-package-smoke-cY6wJg/installed-mod.mjs  105.0kb\n\n⚡ Done in 39ms\n"
+    },
+    {
+      "name": "installed mod high-signal behavior",
+      "exitCode": 0,
+      "durationMs": 0,
+      "outputTail": "{\n  \"fingerprintTemplate\": \"visual_receipt im8health.com 2 viewports 2 selectors\",\n  \"handlerCapturedTemplate\": true\n}"
+    }
+  ]
+}
