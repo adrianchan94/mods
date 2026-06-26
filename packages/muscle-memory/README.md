@@ -4,7 +4,7 @@
 
 ![muscle-memory demo](./docs/demo.gif)
 
-> *The agent works → muscle-memory reviews across sessions → distills/updates a class-level skill (update-first) → `💾 muscle-memory review:` summary + evidence manifest → measured runtime gain. Hermes's loop, Letta-native. (`docs/demo.gif`)*
+> *A fresh agent **fails** a real Letta task (0%) → muscle-memory watches 3 sessions and **distills the lesson live** (real SKILL.md, update-first, evidence manifest) → the **same agent nails it (→100%, +67 pts)** → and it **beat Hermes's own prompt 47 vs 35.** Every number real; the reel runs the actual pipeline. (`docs/demo.gif`)*
 
 muscle-memory watches your agent's real tool-use, then *reflectively distills* it into reusable, **class-level** skills — the same loop Hermes Agent pioneered, rebuilt to exploit the things only Letta has: **cross-conversation recall** and a **searchable, git-versioned memory filesystem (MemFS)**. It observes, distills, curates, and defends — all reversible, gated, and receipted.
 
