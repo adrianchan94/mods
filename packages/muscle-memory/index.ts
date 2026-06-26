@@ -619,6 +619,12 @@ export function scanSkillContent(content: string): { ok: boolean; issues: string
   if (/\bgit\s+push\b[^\n]*--force\b|\bpush\s+--force(?:-with-lease)?\b/i.test(c)) issues.push("force push");
   if (Math.ceil(c.length / 4) > 5000) issues.push("body > 5000 tokens (decompose into references/)");
   if (/\bignore\s+(?:all\s+|the\s+)?(?:previous|prior|above)\s+(?:instructions|messages|prompts|rules)\b/i.test(c) || /\b(?:disregard|override)\s+(?:your\s+|the\s+)?(?:system|previous)\s+(?:prompt|instructions)\b/i.test(c)) issues.push("prompt-injection phrasing");
+  // concrete hardcoded API-key/token formats (QA-hardened)
+  if (/\b(?:sk-ant-[a-zA-Z0-9-]{8,}|sk-[a-zA-Z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,})\b/.test(c)) issues.push("hardcoded API key/token");
+  // credential exfiltration: command-substitution reading secrets, or piping creds to the network
+  if (/\$\([^)]*(?:cat|head|tail|less)[^)]*(?:\.ssh|id_rsa|\.env|\.aws|credentials|\.netrc|passwd|secret|token)/i.test(c) || /(?:curl|wget|nc|ncat)\b[^\n]*(?:\$\(|`)[^\n]*(?:cat|\.ssh|\.env|credentials|secret)/i.test(c)) issues.push("credential exfiltration pattern");
+  // obfuscated code execution
+  if (/\beval\s*\(\s*(?:atob|Buffer\.from|decodeURIComponent|unescape)\s*\(/i.test(c) || /\bbase64\s+-d\b[^\n]*\|\s*(?:ba)?sh\b/i.test(c) || /\b(?:python3?|node|ruby|perl)\b[^\n]*\s-[ec]\b[^\n]*(?:atob|base64|exec\(|eval)/i.test(c)) issues.push("obfuscated code execution");
   return { ok: issues.length === 0, issues };
 }
 export function scanSupportFile(path: string, content: string): { ok: boolean; issues: string[] } {
@@ -815,6 +821,24 @@ function managedView(dirs: string[]): ManagedView[] {
   return out;
 }
 
+/** Extract text from a stream chunk across the shapes Letta/providers emit (string, {text}, {delta},
+ * {content:string|{text}|[{text}]}, OpenAI {choices:[{delta:{content}}]}). Returns "" for non-text
+ * control chunks — so we NEVER accumulate "[object Object]" (the live fork-author reject bug). */
+export function streamChunkText(c: any): string {
+  if (c == null) return "";
+  if (typeof c === "string") return c;
+  if (typeof c.text === "string") return c.text;
+  if (typeof c.delta === "string") return c.delta;
+  if (typeof c.content === "string") return c.content;
+  if (typeof c.delta?.text === "string") return c.delta.text;
+  if (typeof c.delta?.content === "string") return c.delta.content;
+  if (typeof c.content?.text === "string") return c.content.text;
+  if (Array.isArray(c.content)) return c.content.map((x: any) => (typeof x === "string" ? x : x?.text ?? "")).join("");
+  if (typeof c.choices?.[0]?.delta?.content === "string") return c.choices[0].delta.content;
+  if (typeof c.choices?.[0]?.text === "string") return c.choices[0].text;
+  return "";
+}
+
 /** Optional model-fork author: the model writes a richer SKILL.md body in a hidden conversation.
  * Fully guarded — ANY failure returns null and the executor falls back to the deterministic drafter,
  * so the autopilot loop can never break. (Live-only path; the deterministic fallback is what's unit-tested.) */
@@ -826,7 +850,7 @@ async function forkAuthor(ctx: any, c: Candidate, repair?: RepairChain): Promise
     const forked = await ctx.conversation.fork({ hidden: true });
     const stream = await forked.sendMessageStream([{ role: "user", content: prompt }]);
     let body = "";
-    for await (const chunk of stream as AsyncIterable<any>) body += String(chunk?.text ?? chunk?.delta ?? chunk?.content ?? "");
+    for await (const chunk of stream as AsyncIterable<any>) body += streamChunkText(chunk);
     body = body.trim().replace(/^```(?:markdown|md)?\n?|\n?```$/g, "");
     if (body.length < 80 || !/##\s*Procedure/i.test(body) || !/##\s*Verification/i.test(body)) return null; // malformed → fallback
     const lint = lintSkillDraft({ name: det.name, description: det.description, body }, { needsPitfalls: !!c.fixes });
@@ -972,13 +996,21 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   if (startIdx > 0) skill = skill.slice(startIdx).trim();
   skill = skill.replace(/^```(?:markdown|md|yaml)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
   if (/^NOTHING-TO-SAVE/i.test(skill) || skill.length < 40) return { action: "none" };
-  let name = slug((skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim());
+  const rawName = (skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
+  if (rawName && (/[\/\\;|&]|\.\./.test(rawName) || rawName.length > 64)) return { action: "reject", reason: `name "${rawName.slice(0, 40)}" has unsafe characters (path/injection)` };
+  let name = slug(rawName);
   if (!name) name = slug((skill.match(/^#\s+(.+?)\s*$/m)?.[1] || "").trim());
   if (!name && updTarget) name = updTarget.name; // update-first: we already know the target
   let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
   if (!description) description = (skill.split("\n").find((l) => { const t = l.trim(); return t.length > 25 && !/^([#`>*-]|---|name:|title:|description:)/i.test(t); }) || "").trim();
   if (!description && updTarget) description = updTarget.description;
-  const body = skill.replace(/^---[\s\S]*?---\n?/, "").replace(/^#\s+.+\n+/, "").trim();
+  // BODY: start at the first "## " section — robust to conversational preamble, unclosed/whole-wrapped
+  // frontmatter (---…---), and a "# Title". Then drop a trailing --- and any postamble prose after it.
+  let body = skill;
+  const secStart = body.search(/(^|\n)##\s+/);
+  if (secStart >= 0) body = body.slice(secStart);
+  else body = body.replace(/^---[\s\S]*?\n---\s*\n?/, "").replace(/^#\s+.+\n+/, "");
+  body = body.replace(/\n---\s*(\n[\s\S]*)?$/, "").trim();
   if (!isValidSkillName(name)) return { action: "reject", reason: `name "${name}" not class-level` };
   if (!description || description.length < 20) return { action: "reject", reason: "description too thin" };
   const sec = scanSkillContent(body); if (!sec.ok) return { action: "reject", reason: `security: ${sec.issues.join("; ")}` };
@@ -1093,7 +1125,7 @@ function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<stri
       if (typeof ctx?.conversation?.fork !== "function") return "";
       const forked = await ctx.conversation.fork({ hidden: true });
       const stream = await forked.sendMessageStream([{ role: "user", content: `${sys}\n\n${user}` }]);
-      let out = ""; for await (const c of stream as AsyncIterable<any>) out += String(c?.text ?? c?.delta ?? c?.content ?? "");
+      let out = ""; for await (const c of stream as AsyncIterable<any>) out += streamChunkText(c);
       return out.trim();
     } catch { return ""; }
   };
@@ -1149,7 +1181,7 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
 
 // Test hook (deterministic validation without live data).
 export const __mm = { commandTemplate, fingerprint, detect, detectTemplates, detectSequences, maturityScore, MM, loadRows, dedupCheck, slug, draftSkillFromCandidate, candidateName, candidateDescription, curateManagedSkills, managedSkillUsage,
-  isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview,
+  streamChunkText, isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview,
   buildEvidenceManifest, retrievePreferences, coverageMap, churnSignal, summarizeReflectActions, renderMuscleMemoryPanel, loadMeshFeed, renderMeshFeed,
   buildRegistry, curatorPass, skillVerbs, specDrift, lifecycleTransition, CURATOR, setPinned, isPinned, buildDefenses, preActionDefense,
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,

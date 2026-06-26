@@ -619,6 +619,12 @@ export function scanSkillContent(content: string): { ok: boolean; issues: string
   if (/\bgit\s+push\b[^\n]*--force\b|\bpush\s+--force(?:-with-lease)?\b/i.test(c)) issues.push("force push");
   if (Math.ceil(c.length / 4) > 5000) issues.push("body > 5000 tokens (decompose into references/)");
   if (/\bignore\s+(?:all\s+|the\s+)?(?:previous|prior|above)\s+(?:instructions|messages|prompts|rules)\b/i.test(c) || /\b(?:disregard|override)\s+(?:your\s+|the\s+)?(?:system|previous)\s+(?:prompt|instructions)\b/i.test(c)) issues.push("prompt-injection phrasing");
+  // concrete hardcoded API-key/token formats (QA-hardened)
+  if (/\b(?:sk-ant-[a-zA-Z0-9-]{8,}|sk-[a-zA-Z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,})\b/.test(c)) issues.push("hardcoded API key/token");
+  // credential exfiltration: command-substitution reading secrets, or piping creds to the network
+  if (/\$\([^)]*(?:cat|head|tail|less)[^)]*(?:\.ssh|id_rsa|\.env|\.aws|credentials|\.netrc|passwd|secret|token)/i.test(c) || /(?:curl|wget|nc|ncat)\b[^\n]*(?:\$\(|`)[^\n]*(?:cat|\.ssh|\.env|credentials|secret)/i.test(c)) issues.push("credential exfiltration pattern");
+  // obfuscated code execution
+  if (/\beval\s*\(\s*(?:atob|Buffer\.from|decodeURIComponent|unescape)\s*\(/i.test(c) || /\bbase64\s+-d\b[^\n]*\|\s*(?:ba)?sh\b/i.test(c) || /\b(?:python3?|node|ruby|perl)\b[^\n]*\s-[ec]\b[^\n]*(?:atob|base64|exec\(|eval)/i.test(c)) issues.push("obfuscated code execution");
   return { ok: issues.length === 0, issues };
 }
 export function scanSupportFile(path: string, content: string): { ok: boolean; issues: string[] } {
@@ -990,7 +996,9 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   if (startIdx > 0) skill = skill.slice(startIdx).trim();
   skill = skill.replace(/^```(?:markdown|md|yaml)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
   if (/^NOTHING-TO-SAVE/i.test(skill) || skill.length < 40) return { action: "none" };
-  let name = slug((skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim());
+  const rawName = (skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
+  if (rawName && (/[\/\\;|&]|\.\./.test(rawName) || rawName.length > 64)) return { action: "reject", reason: `name "${rawName.slice(0, 40)}" has unsafe characters (path/injection)` };
+  let name = slug(rawName);
   if (!name) name = slug((skill.match(/^#\s+(.+?)\s*$/m)?.[1] || "").trim());
   if (!name && updTarget) name = updTarget.name; // update-first: we already know the target
   let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
