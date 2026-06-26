@@ -919,7 +919,7 @@ Output ONLY the SKILL.md, or exactly "NOTHING-TO-SAVE".`;
 // Generic dev/agent words that must NOT drive update-first routing (they false-positive across
 // unrelated skills, e.g. "validate"/"run"/"tool" matching shopify-cli for mod-validation work).
 const SEARCH_STOP = new Set("the and for with via use using used run running runs tool tools command commands file files validate validating validation build builds building test testing tests check checking code into from that this your you any new real step steps workflow workflows work works working session sessions across before after fix fixed fixing error errors fail failed failing not add get set make made need want call calls called when then them they here there what which how its has have will can may also same each only over under out off across recurring observed".split(" "));
-const SEARCH_DISTINCT_MIN = 2; // need ≥2 distinctive (non-stopword) term hits in name/description
+const SEARCH_DISTINCT_MIN = 3; // ≥3 distinctive (non-stopword) hits in name/desc — prevents cross-domain false-positives (e.g. browser-QA→cloud-forensics)
 export function searchSkills(dirs: string[], query: string, k = 5): Array<{ name: string; description: string; dir: string; score: number; matched: number }> {
   const terms = [...new Set(String(query).toLowerCase().split(/[^a-z0-9.]+/).filter((t) => t.length > 2 && !SEARCH_STOP.has(t)))];
   const out: Array<{ name: string; description: string; dir: string; score: number; matched: number }> = [];
