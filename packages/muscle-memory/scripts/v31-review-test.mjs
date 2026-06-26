@@ -149,6 +149,10 @@ ok("reflect wrote ui-state.json (panel state)", existsSync(join(STATE, "ui-state
 const uiRaw = existsSync(join(STATE, "ui-events.jsonl")) ? readFileSync(join(STATE, "ui-events.jsonl"), "utf8") : "";
 ok("ui-events are REDACTED (no secrets/args)", uiRaw.length > 0 && !/sk-[A-Za-z0-9]{8}|Bearer\s+[A-Za-z0-9]|password=|api[_-]?key\s*[:=]/i.test(uiRaw));
 ok("ui-events only carry lifecycle phases (no raw model drafts)", uiRaw.split("\n").filter(Boolean).every((l) => { try { const e = JSON.parse(l); return e.source === "muscle-memory" && typeof e.phase === "string"; } catch { return false; } }));
+// cross-agent mesh feed (see Mack + Kev distilling)
+const meshLine = M.renderMeshFeed([{ agent: "mack", type: "skill_updated", skill: "editing-letta-mods-safely", route: "UPDATE", signals: 8 }])[0];
+ok("mesh feed renders cross-agent line (agent + skill + route)", meshLine.includes("mack") && meshLine.includes("editing-letta-mods-safely") && meshLine.includes("UPDATE"));
+ok("loadMeshFeed is best-effort (array, never throws)", Array.isArray(M.loadMeshFeed(3)));
 process.env.MM_REFLECT = wasReflect || "";
 
 hr("VERDICT");

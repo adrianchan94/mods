@@ -40,3 +40,5 @@ console.log('write-tool approval:', writeTool.requiresApproval === true ? 'yes' 
 if (!/(muscle-memory — 6 reps observed|6 reps observed · tools exec_command:6)/.test(text)) throw new Error('rep count missing');
 if (!/npm run validate/.test(text)) throw new Error('exec_command template did not show as candidate');
 if (!/mature (skill )?candidates/.test(text)) throw new Error('candidate summary missing');
+const eventsOut = await commands['muscle-memory'].run({ argv: ['events'] });
+if (!/no muscle-memory review events yet/.test(eventsOut.output || '')) throw new Error('events subcommand missing');
