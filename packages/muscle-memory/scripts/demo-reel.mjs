@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // muscle-memory — THE demo. HEADLINE = skill distillation: Hermes's self-improvement function,
 // rebuilt in Letta but BETTER. Runs the REAL pipeline (real SKILL.md + manifest), then contrasts
-// the distillation against Hermes's, then shows the proof (47v35, 33→100). Every number real.
+// the distillation against Hermes's, then shows the proof (20/20 vs 7/20 coverage, 33→100). Every number real.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -69,7 +69,7 @@ const author = async (_s, u) => { const m = u.match(/UPDATE-FIRST[\s\S]*?"([a-z0
   // ── PROOF (supporting) ──
   p(`\n${C}And it's not just richer — it's measurably better:${X}`);
   await sleep(600);
-  p(`   ${B}beat Hermes's own review prompt:${X}  ${G}47${X} ${D}vs${X} ${Y}35${X}  ${D}(GPT-judged)${X}`);
+  p(`   ${B}coverage crush:${X}  ${G}20/20${X} ${D}vs Hermes${X} ${Y}7/20${X}  ${D}(2.9×, GPT-judged)${X}`);
   await sleep(700);
   p(`   ${B}the distilled skill lifts the agent:${X}  ${R}33%${X} ${D}→${X} ${G}100%${X} ${D}first-try (+67 pts, real A/B)${X}`);
   await sleep(1600);

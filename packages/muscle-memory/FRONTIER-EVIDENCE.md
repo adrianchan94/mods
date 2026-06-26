@@ -50,7 +50,7 @@ All 3 routed correctly (2 update-existing, 1 create-new) and produced genuinely 
 
 ## 5. Where muscle-memory actually CRUSHES Hermes (the substrate)
 Per-skill prompt-craft is now ~even-to-ahead. The *decisive* wins are structural — things Hermes cannot do:
-- **Cross-conversation recall** — distills from the agent's whole history; Hermes reviews one conversation. (Original cross-conversation benchmark: 47 vs 35.)
+- **Cross-conversation recall** — distills from the agent's whole history; Hermes reviews one conversation. (Earlier cross-conversation benchmark also favored muscle-memory; current packaged receipts emphasize the multi-domain quality, coverage, runtime, and replication results.)
 - **MemFS content-level update-first** — patches the right existing skill instead of duplicating; Hermes dedupes on names. Near-zero library bloat. (Proven live: regenerated cloud-agent-forensics & editing-letta-mods-safely as UPDATEs.)
 - **Evidence manifests** — every skill is an auditable git object (sources, hits, rejected noise, hashes).
 - **Negative filter** — never learns env-noise; **runtime A/B**; **visible Hermes-style UI**; **reversible + gated**.

@@ -996,7 +996,13 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
   if (!description) description = (skill.split("\n").find((l) => { const t = l.trim(); return t.length > 25 && !/^([#`>*-]|---|name:|title:|description:)/i.test(t); }) || "").trim();
   if (!description && updTarget) description = updTarget.description;
-  const body = skill.replace(/^---[\s\S]*?---\n?/, "").replace(/^#\s+.+\n+/, "").trim();
+  // BODY: start at the first "## " section — robust to conversational preamble, unclosed/whole-wrapped
+  // frontmatter (---…---), and a "# Title". Then drop a trailing --- and any postamble prose after it.
+  let body = skill;
+  const secStart = body.search(/(^|\n)##\s+/);
+  if (secStart >= 0) body = body.slice(secStart);
+  else body = body.replace(/^---[\s\S]*?\n---\s*\n?/, "").replace(/^#\s+.+\n+/, "");
+  body = body.replace(/\n---\s*(\n[\s\S]*)?$/, "").trim();
   if (!isValidSkillName(name)) return { action: "reject", reason: `name "${name}" not class-level` };
   if (!description || description.length < 20) return { action: "reject", reason: "description too thin" };
   const sec = scanSkillContent(body); if (!sec.ok) return { action: "reject", reason: `security: ${sec.issues.join("; ")}` };
