@@ -61,6 +61,6 @@
     "benchmark:coverage": "node scripts/coverage-benchmark.mjs",
     "replicate": "node scripts/replicate-workflows.mjs",
     "runtime:crush": "node scripts/runtime-crush.mjs",
-    "qa": "node scripts/qa-stress.mjs"
+    "qa": "node scripts/qa-stress.mjs && node scripts/qa-stress2.mjs"
   }
 }
