@@ -1,7 +1,7 @@
 {
   "name": "@letta-ai/muscle-memory",
   "version": "0.3.1",
-  "description": "Letta Code mod: a self-evolving skill foundry. A reflective reviewer distills CLASS-LEVEL skills from CROSS-CONVERSATION recall (not one session), routes update-first via MemFS search (anti-bloat), filters env-noise, runs a staged fork autopilot + curator, and learns failure defenses — all reversible, gated, and receipted. Benchmarked above Hermes's own review prompt on output quality + ability.",
+  "description": "Letta Code mod: a self-evolving skill foundry. A reflective reviewer distills CLASS-LEVEL skills from CROSS-CONVERSATION recall (not one session), routes update-first via MemFS search (anti-bloat), filters env-noise, runs a staged fork autopilot + curator, and learns failure defenses \u2014 all reversible, gated, and receipted. Benchmarked above Hermes's own review prompt on output quality + ability.",
   "author": "Adrian Chan",
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,9 @@
     "LICENSE",
     "mods",
     "scripts",
-    "docs"
+    "docs",
+    "FRONTIER-EVIDENCE.md",
+    "*-result.json"
   ],
   "letta": {
     "manifestVersion": 1,

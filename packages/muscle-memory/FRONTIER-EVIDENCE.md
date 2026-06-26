@@ -18,7 +18,7 @@ Across **three** refined runs (38.6 / 39.6 / 37.8): **muscle-memory ~38.7 vs Her
 - **Honest:** the margin is real but not blowout (±5 swing). We went from **losing on prompt-craft to consistently beating Hermes's battle-tested prompt** — that's the headline of the refinement loop.
 - **Key fixes found by the judge:** our reviewer was producing broad-but-truncated skills; tuning it for *tight, complete, safe, decision-aware* skills (and short self-contained code blocks) flipped it.
 
-## 2. Pitfall COVERAGE — the structural crush (2.0x)
+## 2. Pitfall COVERAGE — the structural crush (2.9x)
 Per-skill quality is a modest win; **coverage is the blowout.** Each domain has N canonical hard-won pitfalls. muscle-memory distills from CROSS-CONVERSATION evidence (sees all N); Hermes reviews ONE conversation (sees ~2). A GPT judge counts how many real pitfalls each skill genuinely captures (symptom + fix). `scripts/coverage-benchmark.mjs` · receipt `coverage-benchmark-result.json`.
 
 | domain | muscle-memory | Hermes |
@@ -62,4 +62,4 @@ Per-skill prompt-craft is now ~even-to-ahead. The *decisive* wins are structural
 - **Runtime:** distilled skills lift the agent **33%→100%** first-try correctness.
 - **Substrate:** cross-conversation recall, content-level update-first, evidence manifests, visible UI — all things Hermes structurally lacks.
 
-**Bottom line: muscle-memory beats Hermes on skill-craft *and* captures 2x the real know-how *and* proves it helps at runtime.** The crush is the coverage + the substrate; the prompt-craft is now a win on top.
+**Bottom line: muscle-memory beats Hermes on skill-craft *and* captures 2.9x the real know-how *and* proves it helps at runtime.** The crush is the coverage + the substrate; the prompt-craft is now a win on top.

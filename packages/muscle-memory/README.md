@@ -8,7 +8,7 @@
 
 muscle-memory watches your agent's real tool-use, then *reflectively distills* it into reusable, **class-level** skills — the same loop Hermes Agent pioneered, rebuilt to exploit the things only Letta has: **cross-conversation recall** and a **searchable, git-versioned memory filesystem (MemFS)**. It observes, distills, curates, and defends — all reversible, gated, and receipted.
 
-> **Benchmarked head-to-head against Hermes's *own* skill-review prompt** (pulled from their source). Authors ran on the same NOUS model; the judge is **GPT-5.x via OpenAI OAuth**. muscle-memory's reviewer scores **Hermes-level on identical evidence (43–44 vs 47, judged `hermes_level=yes`)** and **beats it on output quality + ability when leveraging cross-conversation recall (consistently 47 vs Hermes 35–39)** — the judge attributed Hermes's gap to *"single-conversation depth."* See [`BENCHMARK-REPORT.md`](./BENCHMARK-REPORT.md) + `benchmark-result.json` (carries the real GPT verdict).
+> **Benchmarked head-to-head against Hermes's *own* skill-review prompt** (pulled from their source). Authors ran on the same frontier author model for both sides; the judge is **GPT-5.x via OpenAI OAuth**. The current evidence package shows two no-cap claims: **pitfall coverage crushes Hermes 20/20 vs 7/20 (2.9×)** because muscle-memory sees cross-conversation history, and refined skill quality is **consistently ahead but modest** (~39 vs ~36, with judge variance). See [`FRONTIER-EVIDENCE.md`](./FRONTIER-EVIDENCE.md), `benchmark-multidomain-result.json`, `coverage-benchmark-result.json`, `runtime-crush-result.json`, and `perf-improvement-result.json`.
 
 ## Does it actually make the agent better? (measured, yes)
 A skill is only worth distilling if it *improves runtime performance*. So we measured it: an A/B where the agent does Letta-specific pitfall tasks (the `ctx.args` arg pattern, backup-naming, `/reload` semantics) **without** the distilled skill vs **with** it in context, on a real model (`npm run perf`):
@@ -47,7 +47,7 @@ Every skill it writes is an **evidence-backed git object** — you can see exact
 muscle-memory surfaces a compact **self-improvement summary** in the TUI — a panel around the input bar + a `/muscle-memory` dashboard — so you *watch* it distill, not just trust it. (No transcript hacks; only the supported `openPanel` + command APIs. Redacted lifecycle receipts only — never chain-of-thought.)
 
 ```
-💾 muscle-memory v3 · reflect staged · done
+💾 muscle-memory · reflect staged · done
 last: updated editing-letta-mods-safely (update-first, 3 sessions/8 signals)
 route: UPDATE editing-letta-mods-safely · staged
 managed 1 · staged 5 · coverage 3 covered / 1 uncovered
@@ -79,9 +79,12 @@ The generated skills are standard [agentskills.io](https://agentskills.io) `SKIL
 - `npm test` — 10/10 + integration (read no-approval / write approval-gated)
 - `npm run hermes:parity` — 44/44 (skill-manager + support files + security + lifecycle + fork autopilot + compatibility)
 - `npm run live:defense` — 13/13 (outcome correlation + live-backend event-shape defense)
-- `npm run review:test` — 49/49 (negative filter, naming gate, cross-conversation evidence, hardened MemFS update-first routing + regression, autonomous reflective review, evidence manifests, coverage map, persona retrieval, churn lifecycle)
+- `npm run review:test` — 54/54 (negative filter, naming gate, cross-conversation evidence, hardened MemFS update-first routing + regression, autonomous reflective review, evidence manifests, coverage map, persona retrieval, churn lifecycle, live panel mirror, mesh feed)
 - `npm run review:live` — end-to-end on a real model + real skill library (update-first anti-bloat fires)
-- `npm run benchmark` — the head-to-head vs Hermes's exact prompt (needs `NOUS_API_KEY`; judge via OpenAI OAuth)
+- `npm run benchmark:coverage` — pitfall coverage benchmark (20/20 vs 7/20 receipt)
+- `npm run benchmark:multidomain` — multi-domain quality benchmark (frontier author + GPT judge)
+- `npm run runtime:crush` — runtime comparison against Hermes-style skill
+- `npm run benchmark` — legacy head-to-head harness (requires a configured model API key; judge via OpenAI OAuth)
 
 ## Honest scope (no overclaim)
 - Pre-action failure defense is **advisory** (logs/warns via receipts) — not a hard block.

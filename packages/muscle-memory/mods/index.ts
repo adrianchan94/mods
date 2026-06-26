@@ -815,6 +815,24 @@ function managedView(dirs: string[]): ManagedView[] {
   return out;
 }
 
+/** Extract text from a stream chunk across the shapes Letta/providers emit (string, {text}, {delta},
+ * {content:string|{text}|[{text}]}, OpenAI {choices:[{delta:{content}}]}). Returns "" for non-text
+ * control chunks — so we NEVER accumulate "[object Object]" (the live fork-author reject bug). */
+export function streamChunkText(c: any): string {
+  if (c == null) return "";
+  if (typeof c === "string") return c;
+  if (typeof c.text === "string") return c.text;
+  if (typeof c.delta === "string") return c.delta;
+  if (typeof c.content === "string") return c.content;
+  if (typeof c.delta?.text === "string") return c.delta.text;
+  if (typeof c.delta?.content === "string") return c.delta.content;
+  if (typeof c.content?.text === "string") return c.content.text;
+  if (Array.isArray(c.content)) return c.content.map((x: any) => (typeof x === "string" ? x : x?.text ?? "")).join("");
+  if (typeof c.choices?.[0]?.delta?.content === "string") return c.choices[0].delta.content;
+  if (typeof c.choices?.[0]?.text === "string") return c.choices[0].text;
+  return "";
+}
+
 /** Optional model-fork author: the model writes a richer SKILL.md body in a hidden conversation.
  * Fully guarded — ANY failure returns null and the executor falls back to the deterministic drafter,
  * so the autopilot loop can never break. (Live-only path; the deterministic fallback is what's unit-tested.) */
@@ -826,7 +844,7 @@ async function forkAuthor(ctx: any, c: Candidate, repair?: RepairChain): Promise
     const forked = await ctx.conversation.fork({ hidden: true });
     const stream = await forked.sendMessageStream([{ role: "user", content: prompt }]);
     let body = "";
-    for await (const chunk of stream as AsyncIterable<any>) body += String(chunk?.text ?? chunk?.delta ?? chunk?.content ?? "");
+    for await (const chunk of stream as AsyncIterable<any>) body += streamChunkText(chunk);
     body = body.trim().replace(/^```(?:markdown|md)?\n?|\n?```$/g, "");
     if (body.length < 80 || !/##\s*Procedure/i.test(body) || !/##\s*Verification/i.test(body)) return null; // malformed → fallback
     const lint = lintSkillDraft({ name: det.name, description: det.description, body }, { needsPitfalls: !!c.fixes });
@@ -1093,7 +1111,7 @@ function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<stri
       if (typeof ctx?.conversation?.fork !== "function") return "";
       const forked = await ctx.conversation.fork({ hidden: true });
       const stream = await forked.sendMessageStream([{ role: "user", content: `${sys}\n\n${user}` }]);
-      let out = ""; for await (const c of stream as AsyncIterable<any>) out += String(c?.text ?? c?.delta ?? c?.content ?? "");
+      let out = ""; for await (const c of stream as AsyncIterable<any>) out += streamChunkText(c);
       return out.trim();
     } catch { return ""; }
   };
@@ -1149,7 +1167,7 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
 
 // Test hook (deterministic validation without live data).
 export const __mm = { commandTemplate, fingerprint, detect, detectTemplates, detectSequences, maturityScore, MM, loadRows, dedupCheck, slug, draftSkillFromCandidate, candidateName, candidateDescription, curateManagedSkills, managedSkillUsage,
-  isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview,
+  streamChunkText, isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview,
   buildEvidenceManifest, retrievePreferences, coverageMap, churnSignal, summarizeReflectActions, renderMuscleMemoryPanel, loadMeshFeed, renderMeshFeed,
   buildRegistry, curatorPass, skillVerbs, specDrift, lifecycleTransition, CURATOR, setPinned, isPinned, buildDefenses, preActionDefense,
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,

@@ -159,6 +159,13 @@ ok("ui-events only carry lifecycle phases (no raw model drafts)", uiRaw.split("\
 const meshLine = M.renderMeshFeed([{ agent: "mack", type: "skill_updated", skill: "editing-letta-mods-safely", route: "UPDATE", signals: 8 }])[0];
 ok("mesh feed renders cross-agent line (agent + skill + route)", meshLine.includes("mack") && meshLine.includes("editing-letta-mods-safely") && meshLine.includes("UPDATE"));
 ok("loadMeshFeed is best-effort (array, never throws)", Array.isArray(M.loadMeshFeed(3)));
+// streamChunkText: the live fork-author [object Object] regression — handle every chunk shape
+ok("streamChunkText: string chunk", M.streamChunkText("hi") === "hi");
+ok("streamChunkText: {text}", M.streamChunkText({ text: "a" }) === "a");
+ok("streamChunkText: nested {content:{text}} (the bug)", M.streamChunkText({ content: { type: "text", text: "b" } }) === "b");
+ok("streamChunkText: {content:[{text}]}", M.streamChunkText({ content: [{ text: "x" }, { text: "y" }] }) === "xy");
+ok("streamChunkText: OpenAI {choices:[{delta:{content}}]}", M.streamChunkText({ choices: [{ delta: { content: "z" } }] }) === "z");
+ok("streamChunkText: control chunk → '' (never [object Object])", M.streamChunkText({ type: "done", usage: {} }) === "");
 process.env.MM_REFLECT = wasReflect || "";
 
 hr("VERDICT");
