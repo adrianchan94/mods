@@ -49,7 +49,7 @@
     }
   },
   "scripts": {
-    "test": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-test.mjs && node scripts/validate.mjs && npm run integration",
+    "test": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-test.mjs && node scripts/validate.mjs && npm run integration && npm run autonomy",
     "demo": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-demo.mjs && node scripts/demo.mjs",
     "integration": "npx --yes esbuild mods/index.ts --bundle --platform=node --format=esm --outfile=/tmp/muscle-memory-package-integration.mjs && node scripts/integration.mjs",
     "hermes:parity": "node scripts/hermes-parity.mjs",
@@ -73,6 +73,7 @@
     "live:reload-proof": "node scripts/live-reload-proof.mjs",
     "dogfood:complete-loop": "node scripts/complete-loop-dogfood.mjs",
     "dogfood:separate-workflow": "node scripts/separate-workflow-dogfood.mjs",
-    "dogfood:catalog-publish": "node scripts/catalog-publish-dogfood.mjs"
+    "dogfood:catalog-publish": "node scripts/catalog-publish-dogfood.mjs",
+    "autonomy": "node scripts/autonomy.mjs"
   }
 }

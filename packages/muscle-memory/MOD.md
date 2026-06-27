@@ -25,7 +25,7 @@ You have a self-evolving skill foundry. It observes your tool-use, distills **cl
 - `autopilot_run` (`mode:staged|auto`) — the deterministic staged autopilot.
 
 ## Visibility (v3.3)
-A capability-guarded panel (`muscle-memory-live`, order 20) + the `/muscle-memory` dashboard surface **finished** self-improvement summaries (reviewing → route → staged/updated → manifest), backed by `ui-events.jsonl` (redacted lifecycle receipts only — no chain-of-thought, no raw args). Headless/Desktop (no panel capability) → the `/muscle-memory` command shows the same content. Set `MM_REFLECT=staged` to activate the autonomous reviewer at session end.
+A capability-guarded panel (`muscle-memory-live`, order 20) + the `/muscle-memory` dashboard surface **finished** self-improvement summaries (reviewing → route → staged/updated → manifest), backed by `ui-events.jsonl` (redacted lifecycle receipts only — no chain-of-thought, no raw args). Headless/Desktop (no panel capability) → the `/muscle-memory` command shows the same content. Set `MM_REFLECT=staged` to activate the autonomous reviewer — it fires on its own after each turn (Hermes-style background nudge, gated to mature+not-yet-distilled patterns) and at session end.
 
 ## When to use
 - After a non-trivial session, run `reflect_plan` → if it would capture a durable lesson, `reflect` to distill/update a skill.

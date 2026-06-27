@@ -35,7 +35,7 @@ ok('detects edit-to-git-add sequence', det.candidates.some(c => c.key === 'Edit.
 ok('detects fix pattern', det.templates.some(c => c.key === 'npm run build' && c.fixes >= 1 && c.mature));
 const draft = mm.draftSkillFromCandidate(det.candidates.find(c => c.key === 'Edit.md → git add'));
 ok('draft includes observed pattern', /Observed pattern/.test(draft.body) && /Edit.md → git add/.test(draft.body));
-ok('candidate name slugged', draft.name === 'md-to-git-add-workflow');
+ok('candidate name slugged', draft.name === 'md-to-git-add');
 ok('curation helper exported', typeof mm.curateManagedSkills === 'function');
 
 for (const c of checks) console.log(`${c.pass ? 'PASS' : 'FAIL'} ${c.name}`);

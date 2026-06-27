@@ -317,10 +317,16 @@ export function dedupCheck(name: string, description: string, dirs: string[] = [
 
 function candidateName(c: Candidate): string {
   const key = c.key.replace(/<[^>]+>/g, "").replace(/[(){}]/g, "").replace(/→/g, " to ");
-  const words = key.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !["str", "path", "url", "read", "write", "edit", "bash"].includes(w));
-  const base = words.slice(0, 5).join("-") || (c.kind === "sequence" ? "running-recurring-workflow" : "using-recurring-command");
-  const gerund = /ing$/.test(base) ? base : `${base}-workflow`;
-  return slug(gerund);
+  // Drop tool/primitive words + the shell-script extension, and DEDUPE repeated tokens, so the
+  // deterministic fallback name stays clean (e.g. "rename-photos.sh ~/Photos" → "rename-photos", not
+  // "rename-photos-sh-photos-workflow"). Keep content tokens (md/py/json) — they carry meaning. 2026-06-27.
+  const STOP = new Set(["str", "path", "url", "read", "write", "edit", "bash", "sh"]);
+  const seen = new Set<string>();
+  const words = key.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w) && !seen.has(w) && seen.add(w));
+  const base = words.slice(0, 5).join("-") || (c.kind === "sequence" ? "recurring-workflow" : "recurring-command");
+  // append "-workflow" only for a lone word; multi-word bases already read as a class-level name
+  const name = (words.length >= 2 || /ing$/.test(base)) ? base : `${base}-workflow`;
+  return slug(name);
 }
 function candidateDescription(c: Candidate): string {
   return `Use when repeating the observed ${c.kind} workflow '${c.key}' (${c.count} reps across ${c.convs} conversation${c.convs === 1 ? "" : "s"}${c.fixes ? `, ${c.fixes} error-recovery reps` : ""}); trigger on similar repeated tool-use, validation, or repair loops.`;
@@ -1065,34 +1071,82 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   const hint = updTarget
     ? `\n\nUPDATE-FIRST (anti-bloat): an existing skill already covers this territory — "${updTarget.name}": ${updTarget.description}. PREFER to extend it: keep that exact name, fold the new pitfalls/steps into a single improved full SKILL.md. Only use a different name if the territory is genuinely distinct.`
     : (matches.length ? `\n\nExisting skills (avoid duplicating): ${matches.map((m) => m.name).join(", ")}.` : "");
-  const raw = (await authorFn(REVIEW_PROMPT, evidence + hint)) || "";
-  try { ensureDir(); writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} ===\n${raw}\n`); } catch { /* */ } // always capture last raw for debuggability
   // ROBUST extraction — models may prepend reasoning/preamble, wrap in ```fences, or use a
   // "# Title" heading instead of YAML frontmatter. Tolerate all; fall back to the update target.
-  let skill = raw.replace(/<\/?think>/gi, "").trim();
-  const startIdx = skill.search(/(^|\n)\s*(---\s*\n|#\s+|name:\s)/i);
-  if (startIdx > 0) skill = skill.slice(startIdx).trim();
-  skill = skill.replace(/^```(?:markdown|md|yaml)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-  if (/^NOTHING-TO-SAVE/i.test(skill) || skill.length < 40) return { action: "none" };
-  const rawName = (skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
-  if (rawName && (/[\/\\;|&]|\.\./.test(rawName) || rawName.length > 64)) return { action: "reject", reason: `name "${rawName.slice(0, 40)}" has unsafe characters (path/injection)` };
-  let name = slug(rawName);
-  if (!name) name = slug((skill.match(/^#\s+(.+?)\s*$/m)?.[1] || "").trim());
-  if (!name && updTarget) name = updTarget.name; // update-first: we already know the target
-  let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
-  if (!description) description = (skill.split("\n").find((l) => { const t = l.trim(); return t.length > 25 && !/^([#`>*-]|---|name:|title:|description:)/i.test(t); }) || "").trim();
-  if (!description && updTarget) description = updTarget.description;
-  // BODY: start at the first "## " section — robust to conversational preamble, unclosed/whole-wrapped
-  // frontmatter (---…---), and a "# Title". Then drop a trailing --- and any postamble prose after it.
-  let body = skill;
-  const secStart = body.search(/(^|\n)##\s+/);
-  if (secStart >= 0) body = body.slice(secStart);
-  else body = body.replace(/^---[\s\S]*?\n---\s*\n?/, "").replace(/^#\s+.+\n+/, "");
-  body = body.replace(/\n---\s*(\n[\s\S]*)?$/, "").trim();
+  const parseDraft = (raw: string): { name: string; description: string; body: string; unsafeName?: string; invalidName?: string } | null => {
+    let skill = (raw || "").replace(/<\/?think>/gi, "").trim();
+    const startIdx = skill.search(/(^|\n)\s*(---\s*\n|#\s+|name:\s)/i);
+    if (startIdx > 0) skill = skill.slice(startIdx).trim();
+    skill = skill.replace(/^```(?:markdown|md|yaml)?\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    if (/^NOTHING-TO-SAVE/i.test(skill) || skill.length < 40) return null;
+    const rawName = (skill.match(/^name:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
+    if (rawName && (/[\/\\;|&]|\.\./.test(rawName) || rawName.length > 64)) return { name: "", description: "", body: "", unsafeName: rawName };
+    let name = slug(rawName);
+    // Do not let deterministic repair launder an explicitly bad model-authored name (e.g. edit-to-npx).
+    // Repair may fill missing structure, but the class-level naming gate must still reject named artifacts.
+    if (rawName && name && !isValidSkillName(name)) return { name, description: "", body: "", invalidName: name };
+    if (!name) name = slug((skill.match(/^#\s+(.+?)\s*$/m)?.[1] || "").trim());
+    if (!name && updTarget) name = updTarget.name; // update-first: we already know the target
+    let description = (skill.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1] || "").trim();
+    if (!description) description = (skill.split("\n").find((l) => { const t = l.trim(); return t.length > 25 && !/^([#`>*-]|---|name:|title:|description:)/i.test(t); }) || "").trim();
+    if (!description && updTarget) description = updTarget.description;
+    let body = skill;
+    const secStart = body.search(/(^|\n)##\s+/);
+    if (secStart >= 0) body = body.slice(secStart);
+    else body = body.replace(/^---[\s\S]*?\n---\s*\n?/, "").replace(/^#\s+.+\n+/, "");
+    body = body.replace(/\n---\s*(\n[\s\S]*)?$/, "").trim();
+    return { name, description, body };
+  };
+  const isCleanDraft = (p: { name: string; description: string; body: string }) =>
+    isValidSkillName(p.name) && !!p.description && p.description.length >= 20 && lintSkillDraft(p).ok;
+
+  // ── Attempt 1, then ONE corrective retry if the draft is malformed for a NON-security reason. ──
+  let raw = (await authorFn(REVIEW_PROMPT, evidence + hint)) || "";
+  try { ensureDir(); writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} ===\n${raw}\n`); } catch { /* */ }
+  let parsed = parseDraft(raw);
+  if (parsed?.unsafeName) return { action: "reject", reason: `name "${parsed.unsafeName.slice(0, 40)}" has unsafe characters (path/injection)` };
+  if (parsed?.invalidName) return { action: "reject", reason: `name "${parsed.invalidName}" not class-level` };
+  if (!parsed) return { action: "none" };
+  // Empty shells are not salvageable: repair may fill missing sections, but must not invent a full skill body.
+  if (!parsed.body || parsed.body.trim().length < 10) return { action: "reject", reason: "body too thin" };
+  if (!isCleanDraft(parsed)) {
+    const why = lintSkillDraft(parsed).issues
+      .concat(isValidSkillName(parsed.name) ? [] : ["name must be a class-level lowercase-hyphen slug"])
+      .concat((parsed.description || "").length >= 20 ? [] : ["description too short"]);
+    const corrective = `\n\nYOUR PREVIOUS DRAFT WAS REJECTED (${why.join("; ")}). Re-output ONE complete SKILL.md and NOTHING else: YAML frontmatter with a class-level "name:" (lowercase-hyphen) and a "description:" that STARTS WITH "Use when"; a body that INCLUDES a "## Procedure" section and a "## Verification" section.`;
+    try {
+      const raw2 = (await authorFn(REVIEW_PROMPT, evidence + hint + corrective)) || "";
+      try { writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} (retry) ===\n${raw2}\n`); } catch { /* */ }
+      const p2 = parseDraft(raw2);
+      if (p2 && !p2.unsafeName && isCleanDraft(p2)) { parsed = p2; raw = raw2; }
+    } catch { /* keep attempt 1 */ }
+  }
+  let { name, description, body } = parsed;
+
+  // ── DETERMINISTIC REPAIR from real evidence — guarantee a valid skill when the draft is salvageable. ──
+  // Security is NEVER repaired around; only structural gaps (name/description/sections) are filled from the
+  // deterministic drafter, which is built from the SAME experience log, so it stays grounded in real evidence.
+  let _fb: { name: string; description: string; body: string } | null | undefined;
+  const fallback = () => { if (_fb === undefined) { try { const c = findCandidate(); _fb = c ? draftWithRepair(c, repairForCandidate(c)) : null; } catch { _fb = null; } } return _fb; };
+  if (!isValidSkillName(name)) { const f = fallback(); name = (updTarget && isValidSkillName(updTarget.name)) ? updTarget.name : (f && isValidSkillName(f.name) ? f.name : name); }
   if (!isValidSkillName(name)) return { action: "reject", reason: `name "${name}" not class-level` };
-  if (!description || description.length < 20) return { action: "reject", reason: "description too thin" };
+  const secEarly = scanSkillContent(body); if (!secEarly.ok) return { action: "reject", reason: `security: ${secEarly.issues.join("; ")}` };
+  const descOk = (d: string) => !!d && d.length >= 20 && /\b(use when|trigger|when )/i.test(d);
+  if (!descOk(description)) {
+    if (description && description.length >= 12 && !/\b(use when|trigger|when )/i.test(description)) description = `Use when ${description}`.slice(0, 700);
+    if (!descOk(description)) { const f = fallback(); description = (f && descOk(f.description)) ? f.description : ((updTarget && descOk(updTarget.description)) ? updTarget.description : description); }
+  }
+  if (!/##\s+procedure/i.test(body) || !/##\s+verification/i.test(body)) {
+    const f = fallback();
+    if (f) {
+      if (!/##\s+procedure/i.test(body)) { const m = f.body.match(/(##\s+Procedure[\s\S]*?)(?=\n##\s|\s*$)/i); body += `\n\n${m ? m[1].trim() : "## Procedure\n1. Repeat the observed workflow, adapting paths/args to the current context.\n2. Capture the success/failure receipt before moving on."}`; }
+      if (!/##\s+verification/i.test(body)) { const m = f.body.match(/(##\s+Verification[\s\S]*?)(?=\n##\s|\s*$)/i); body += `\n\n${m ? m[1].trim() : "## Verification\n- Confirm via concrete command/tool output that the workflow actually succeeded."}`; }
+    }
+  }
+  // ── FINAL gates after repair: security re-scan (hard) + lint; last resort = full deterministic fallback. ──
   const sec = scanSkillContent(body); if (!sec.ok) return { action: "reject", reason: `security: ${sec.issues.join("; ")}` };
-  const lint = lintSkillDraft({ name, description, body }); if (!lint.ok) return { action: "reject", reason: `lint: ${lint.issues.join("; ")}` };
+  const lint = lintSkillDraft({ name, description, body });
+  if (!lint.ok) { const f = fallback(); if (f && lintSkillDraft(f).ok && isValidSkillName(f.name)) { ({ name, description, body } = f); } else return { action: "reject", reason: `lint: ${lint.issues.join("; ")}` }; }
   const content = `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`;
   // UPDATE if the chosen name matches an existing skill (routed or coincidental) — anti-bloat win.
   const slim = matches.map((m) => ({ name: m.name, score: m.score, matched: m.matched }));
@@ -1182,8 +1236,21 @@ export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
   const mode = process.env.MM_REFLECT === "auto" ? "auto" : process.env.MM_REFLECT === "staged" ? "staged" : "off";
   if (!state || (!state.last && !state.phase)) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
   const ageMs = typeof state.ts === "number" ? Date.now() - state.ts : 0;
-  const ttlMs = state.phase === "protected" ? Infinity : state.phase === "idle" ? 60_000 : state.phase === "done" ? 5 * 60_000 : 0;
-  if (ttlMs && ageMs > ttlMs) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
+  // TRANSIENT phases (reviewing/routing/writing) are mid-flight states. If a reflect is interrupted
+  // before a terminal state is written (process killed, author error, /reload), they must NOT stick
+  // forever — self-heal back to "watching" after a short window (a real reflect+author finishes well
+  // under 2min). Bug fixed 2026-06-27: these previously had ttlMs=0 → the panel froze on "writing…".
+  const TRANSIENT = state.phase === "reviewing" || state.phase === "routing" || state.phase === "writing";
+  // EVERY phase must be finite — a notice that never expires freezes the panel (Adrian hit this with
+  // "writing…" AND "protected"/"blocked"). protected/blocked are transient "I just blocked something"
+  // notices, NOT permanent states; default is a safety net so no future phase can ever stick forever.
+  const ttlMs = state.phase === "idle" ? 60_000
+    : state.phase === "done" ? 5 * 60_000
+    : state.phase === "protected" ? 5 * 60_000
+    : state.phase === "blocked" ? 5 * 60_000
+    : TRANSIENT ? 120_000
+    : 90_000;
+  if (ageMs > ttlMs) return mode === "off" ? [] : [`💾 muscle-memory · ${mode} · watching`];
   switch (state.phase) {
     case "reviewing": return [`💾 muscle-memory · 🔍 reviewing ${state.detail || "evidence…"}`];
     case "routing": return [`💾 muscle-memory · 🧭 ${state.route || "routing…"}`];
@@ -1199,7 +1266,7 @@ export function renderMuscleMemoryPanel(state: Record<string, any>): string[] {
 const MESH_FEED = join(homedir(), ".local", "state", "mesh-skill-feed.jsonl");
 function meshAgentLabel(): string { return process.env.MM_AGENT || (String(process.env.MEMORY_DIR || "").includes("be7d4413") ? "mack" : "agent"); }
 function appendMeshFeed(e: { type: string; skill?: string; route?: string; signals?: number }) { try { mkdirSync(dirname(MESH_FEED), { recursive: true }); appendFileSync(MESH_FEED, JSON.stringify({ agent: meshAgentLabel(), ts: Date.now(), source: "muscle-memory", ...e }) + "\n"); } catch { /* */ } }
-export function loadMeshFeed(n = 6): Array<{ agent?: string; type?: string; skill?: string; route?: string; signals?: number }> { try { if (!existsSync(MESH_FEED)) return []; const out: any[] = []; for (const l of readFileSync(MESH_FEED, "utf8").trim().split("\n")) { if (l) try { out.push(JSON.parse(l)); } catch { /* */ } } return out.slice(-n); } catch { return []; } }
+export function loadMeshFeed(n = 6): Array<{ agent?: string; type?: string; skill?: string; route?: string; signals?: number }> { try { if (!existsSync(MESH_FEED)) return []; const all: any[] = []; for (const l of readFileSync(MESH_FEED, "utf8").trim().split("\n")) { if (l) try { all.push(JSON.parse(l)); } catch { /* */ } } const seen = new Map<string, any>(); for (const e of all) seen.set(`${e.agent}|${e.skill}|${e.type}`, e); return [...seen.values()].slice(-n); } catch { return []; } }
 export function renderMeshFeed(entries: Array<{ agent?: string; type?: string; skill?: string; route?: string; signals?: number }>): string[] {
   return entries.map((e) => `${(e.agent || "?").padEnd(5)} ${String(e.type || "").replace("skill_", "")} ${e.skill || ""}${e.route ? ` · ${e.route}` : ""}${e.signals ? ` · ${e.signals} signals` : ""}`.trim());
 }
@@ -1310,7 +1377,15 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
   appendUiEvent({ phase: "review_planned", summary: preTgt ? `route UPDATE → ${preTgt.name}` : "route CREATE — no existing skill safely covers this" });
   writeUiState({ phase: "writing", skill: preTgt?.name, route: preTgt ? `UPDATE → ${preTgt.name}` : "CREATE" });
   const author = config.authorFn || reviewForkAuthor(ctx);
-  const res = await reviewAndAuthor(digest, reviewDirs, author);
+  let res: ReviewResult;
+  try {
+    res = await reviewAndAuthor(digest, reviewDirs, author);
+  } catch (e: any) {
+    // author/review threw — never leave the panel stuck on "writing…"; write a terminal state.
+    appendUiEvent({ phase: "reflect_error", summary: `author failed: ${String(e?.message ?? e).slice(0, 80)}` });
+    writeUiState({ phase: "idle", last: "review interrupted — will retry next session", route: "ERROR · safe" });
+    return { action: "none", reason: `author error: ${String(e?.message ?? e).slice(0, 120)}` };
+  }
   if ((res.action === "create" || res.action === "update") && res.name && res.content) {
     const live = config.mode === "auto";
     const graduate = live || res.action === "update" || isHighConfidenceCreate(res, ev);
@@ -1345,7 +1420,7 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
     appendUiEvent({ phase: safe ? "blocked_unsafe" : "reflect_none", summary: safe ? `🛡️ blocked unsafe content (safe): ${res.reason}` : `draft rejected; nothing saved (${res.reason})` });
     writeUiState({ phase: safe ? "protected" : "idle", last: safe ? "blocked unsafe content (safe)" : `draft rejected; nothing saved`, route: safe ? "BLOCKED · protected" : "SKIP · rejected-draft" });
   }
-  else { appendUiEvent({ phase: "reflect_none", summary: "nothing durable to save" }); writeUiState({ phase: "idle", last: "nothing to save" }); }
+  else { markHandledReflect(sig, routeKey); appendUiEvent({ phase: "reflect_none", summary: "nothing durable to save" }); writeUiState({ phase: "idle", last: "nothing to save" }); } // mark handled so the autonomous nudge doesn't re-review identical evidence every turn
   return res;
 }
 
@@ -1448,6 +1523,28 @@ export default function activate(letta: any) {
           .catch(() => { /* reflection/prune must never break the app */ });
       }
     }));
+
+    // ── AUTONOMOUS DISTILLATION (Hermes-style background review) ──────────────────────────────────
+    // conversation_close (above) only fires at SESSION END. Hermes also nudges DURING a session
+    // ("periodic nudge ... fires without user input"). Mirror that: after EACH turn, cheaply check
+    // whether a mature, not-yet-distilled cross-session pattern has emerged — if so, distill it ON OUR
+    // OWN, with no user command. The maturity gate (≥2 durable signals) + signature dedup mean it fires
+    // exactly once per newly-matured pattern, never every turn. Opt-in (MM_REFLECT=staged|auto); runs in
+    // the background (fire-and-forget) so it never blocks a turn. THIS is what makes it truly autonomous.
+    let autoReflectInFlight = false;
+    disposers.push(letta.events.on("turn_end", (event: any, ctx: any) => {
+      const rfMode = process.env.MM_REFLECT;
+      if ((rfMode !== "staged" && rfMode !== "auto") || autoReflectInFlight) return;
+      try {
+        const ev = buildCrossConversationEvidence(loadExperience());
+        if (ev.items < 2 || loadHandledReflects()[reflectSignature(ev)]) return; // nothing new + mature → stay quiet
+      } catch { return; }
+      autoReflectInFlight = true;
+      runReflectiveReview(ctx ?? { agentId: event?.agentId }, { mode: rfMode })
+        .then(() => { runAutonomousPrune(ctx ?? { agentId: event?.agentId }, { maxRetire: 1 }); try { panel?.update(); } catch { /* */ } })
+        .catch(() => { /* reflection must never break the app */ })
+        .finally(() => { autoReflectInFlight = false; });
+    }));
   }
 
   // v3.3 HERMES-VISIBLE PANEL — a compact self-improvement summary around the input bar (the supported
@@ -1456,7 +1553,12 @@ export default function activate(letta: any) {
     try {
       panel = letta.ui.openPanel({ id: "muscle-memory-live", order: 20, render: () => { try { return renderMuscleMemoryPanel(readUiState()); } catch { return []; } } });
       livePanel = panel; // enable LIVE re-render on every state change
-      const t = setInterval(() => { try { panel?.update(); } catch { /* */ } }, 60_000);
+      // SELF-HEAL on (re)load: a reflect cannot survive a reload, so any transient phase persisted here
+      // is necessarily stale (interrupted mid-author). Reset it to idle so the panel never opens stuck on
+      // "✍️ writing skill…" (the hour-long freeze Adrian hit 2026-06-27). Then repaint immediately.
+      try { const s = readUiState(); if (s && s.phase && s.phase !== "done") writeUiState({ phase: "idle", last: "ready", route: "" }); } catch { /* */ }
+      try { panel?.update(); } catch { /* */ } // repaint on load, don't wait for the interval tick
+      const t = setInterval(() => { try { panel?.update(); } catch { /* */ } }, 20_000);
       disposers.push(() => { clearInterval(t); try { panel?.close(); } catch { /* */ } });
     } catch { /* UI optional */ }
   }

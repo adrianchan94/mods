@@ -82,7 +82,7 @@ Then, in a session:
 - `muscle_memory_skill_read action:reflect_plan` — preview what it would distill (cross-session evidence + update-first routing + confidence), no writes.
 - `muscle_memory_skill_read action:coverage` — the skill coverage map (which task-classes are covered / uncovered / over-covered / noise).
 - `muscle_memory_skill_write action:reflect` — distill/update a class-level skill now (staged; approval-gated; emits an evidence manifest).
-- Autonomous: set `MM_REFLECT=staged` (or `auto`) — the reviewer fires at session end, hands-off. Default **off**.
+- Autonomous: set `MM_REFLECT=staged` (or `auto`) — the reviewer fires **on its own after each turn** (a Hermes-style background nudge), *and* at session end. No "make a skill" command — it watches, and the moment a mature cross-session pattern emerges it distills it hands-off. A maturity gate + signature-dedup mean it fires once per newly-matured pattern (never every turn), and an in-flight guard keeps it off the critical path. Default **off**.
 
 The generated skills are standard [agentskills.io](https://agentskills.io) `SKILL.md` files written to the agent's MemFS skills dir — loadable by Letta's normal **Skill** tool.
 

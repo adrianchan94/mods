@@ -28,4 +28,4 @@ description: Use when checking Shopify or IM8 visual/copy claims before saying d
 - `npm pack --dry-run` includes every receipt/doc the PR or README cites.
 - `git diff --stat` and `git status --short --branch` show only intentional files.
 
-<!-- muscle-memory provenance: reflective 2026-06-26; action=create; convs=3; graduated=true -->
+<!-- muscle-memory provenance: reflective 2026-06-27; action=create; convs=3; graduated=true -->

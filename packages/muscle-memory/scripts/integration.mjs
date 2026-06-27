@@ -6,6 +6,12 @@ const temp = mkdtempSync(join(tmpdir(), 'muscle-memory-integration-'));
 const home = join(temp, 'home');
 mkdirSync(home, { recursive: true });
 process.env.HOME = home;
+// HERMETIC: don't let an ambient MM_REFLECT/MM_STATE_DIR (e.g. from a mack/kev shell) leak in —
+// a stray MM_REFLECT=staged makes conversation_close write review events, breaking the clean-state
+// assertions below. Pin the test environment so it passes deterministically on any machine.
+delete process.env.MM_REFLECT;
+delete process.env.MM_STATE_DIR;
+delete process.env.MM_AGENT;
 
 const mod = await import('/tmp/muscle-memory-package-integration.mjs?t=' + Date.now());
 const handlers = {};

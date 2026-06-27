@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-26T17:27:47.338Z",
+  "generatedAt": "2026-06-27T02:21:28.405Z",
   "pass": true,
   "checks": {
     "lifecycleToolNoApproval": true,
@@ -11,15 +11,15 @@
     "meshPublishedEvent": true
   },
   "observed": {
-    "published": "published 'validating-portable-catalog-skills' -> /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-YiVCgA/global-skills/validating-portable-catalog-skills/SKILL.md",
+    "published": "published 'validating-portable-catalog-skills' -> /var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-qZA2G2/global-skills/validating-portable-catalog-skills/SKILL.md",
     "blocked": {
       "status": "error",
       "content": "privacy blocked: private absolute user path; private org/user/agent identifier"
     },
-    "catalogSkill": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-YiVCgA/global-skills/validating-portable-catalog-skills/SKILL.md",
+    "catalogSkill": "/var/folders/1b/6nyyj5f51y791dxqlgrsyg0r0000gn/T/mm-catalog-publish-qZA2G2/global-skills/validating-portable-catalog-skills/SKILL.md",
     "uiEvents": [
       {
-        "ts": 1782494867336,
+        "ts": 1782526888403,
         "source": "muscle-memory",
         "phase": "skill_published",
         "summary": "published 'validating-portable-catalog-skills' to custom skill catalog",
@@ -30,8 +30,8 @@
     ],
     "feed": [
       {
-        "agent": "agent",
-        "ts": 1782494864079,
+        "agent": "kev",
+        "ts": 1782526884937,
         "source": "muscle-memory",
         "type": "skill_graduated",
         "skill": "validating-shopify-visual-claims-with-receipts",
@@ -39,8 +39,8 @@
         "signals": 4
       },
       {
-        "agent": "agent",
-        "ts": 1782494865157,
+        "agent": "kev",
+        "ts": 1782526886051,
         "source": "muscle-memory",
         "type": "skill_graduated",
         "skill": "validating-loop-workflows",
@@ -48,8 +48,8 @@
         "signals": 1
       },
       {
-        "agent": "agent",
-        "ts": 1782494865176,
+        "agent": "kev",
+        "ts": 1782526886072,
         "source": "muscle-memory",
         "type": "skill_graduated",
         "skill": "capturing-aurora-renderer-proofs",
@@ -57,8 +57,8 @@
         "signals": 1
       },
       {
-        "agent": "agent",
-        "ts": 1782494865190,
+        "agent": "kev",
+        "ts": 1782526886087,
         "source": "muscle-memory",
         "type": "skill_staged",
         "skill": "validating-weak-visual-receipts",
@@ -66,8 +66,8 @@
         "signals": 1
       },
       {
-        "agent": "agent",
-        "ts": 1782494865191,
+        "agent": "kev",
+        "ts": 1782526886089,
         "source": "muscle-memory",
         "type": "skill_graduated",
         "skill": "validating-weak-visual-receipts",
@@ -75,8 +75,8 @@
         "signals": 0
       },
       {
-        "agent": "agent",
-        "ts": 1782494865192,
+        "agent": "kev",
+        "ts": 1782526886090,
         "source": "muscle-memory",
         "type": "skill_retired",
         "skill": "old-unused-loop-prune",
@@ -84,8 +84,8 @@
         "signals": 0
       },
       {
-        "agent": "agent",
-        "ts": 1782494866270,
+        "agent": "kev",
+        "ts": 1782526887272,
         "source": "muscle-memory",
         "type": "skill_graduated",
         "skill": "validating-shopify-visual-claims",
@@ -93,8 +93,8 @@
         "signals": 6
       },
       {
-        "agent": "agent",
-        "ts": 1782494867336,
+        "agent": "kev",
+        "ts": 1782526888404,
         "source": "muscle-memory",
         "type": "skill_published",
         "skill": "validating-portable-catalog-skills",
