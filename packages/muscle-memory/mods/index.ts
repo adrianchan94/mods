@@ -817,6 +817,23 @@ export function auditSkills(skills: Array<{ name: string; description?: string; 
   return { total: skills.length, clean: skills.length - flagged.length, flagged, gapCounts };
 }
 
+// CROSS-SHELF DUPLICATE DETECTOR (2026-06-28): the same skill NAME on >1 shelf (agent + global) with
+// DIVERGENT content is anti-bloat — a stale copy drifting from the live one. The library audit used to
+// silently skip the 2nd occurrence, so it never caught this. Consistent copies (e.g. an up-to-date
+// published mirror) are NOT flagged — only genuine divergence. Provenance comments/whitespace are ignored.
+export function crossShelfDuplicates(entries: Array<{ name: string; shelf: string; body: string }>): Array<{ name: string; shelves: string[]; divergent: boolean }> {
+  const byName = new Map<string, Array<{ shelf: string; body: string }>>();
+  for (const e of entries) { const a = byName.get(e.name) || []; a.push({ shelf: e.shelf, body: e.body }); byName.set(e.name, a); }
+  const out: Array<{ name: string; shelves: string[]; divergent: boolean }> = [];
+  const norm = (b: string) => hash(b.replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim());
+  for (const [name, copies] of byName) {
+    if (copies.length < 2) continue;
+    const divergent = new Set(copies.map((c) => norm(c.body))).size > 1;
+    out.push({ name, shelves: [...new Set(copies.map((c) => c.shelf))], divergent });
+  }
+  return out;
+}
+
 // ── PUBLISHABILITY PREFLIGHT (MM_PUBLISH v1, 2026-06-28) — the skill SUPPLY CHAIN: a graduated skill is
 // agent-specific scar tissue; a *published* (shared Custom Skills) skill must be portable, private-data-
 // safe, reusable by OTHER agents, and app-visible. This is the bridge "this agent learned" → "the mesh
@@ -2293,7 +2310,7 @@ export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFra
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
   // v2
-  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan, publishTier, publishMetadata, findSimilarSkills, stageSanitizedPublish, approveStagedPublish, publishVisibilityReceipt, liveSkillVisible,
+  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, crossShelfDuplicates, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan, publishTier, publishMetadata, findSimilarSkills, stageSanitizedPublish, approveStagedPublish, publishVisibilityReceipt, liveSkillVisible,
   // lifecycle file helpers (for end-to-end manage proof)
   writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG,
   // v5 ENGRAM — CLS loop core (pure)
@@ -2491,14 +2508,17 @@ export default function activate(letta: any) {
           // LIBRARY-WIDE SOTA AUDIT (read-only): score EVERY skill (installed/hand-authored/distilled),
           // not just mm's own — the gate is a pure function. Flags sub-SOTA skills + their exact gaps.
           const dirs = scanDirs(ctx);
-          const seen = new Set<string>();
-          const skills: Array<{ name: string; description: string; body: string }> = [];
-          for (const d of dirs) for (const n of listSkillNames(d)) { if (seen.has(n)) continue; seen.add(n); try { skills.push({ name: n, description: skillDesc(d, n), body: readSkill(d, n) }); } catch { /* */ } }
+          const entries: Array<{ name: string; shelf: string; body: string; description: string }> = [];
+          for (const d of dirs) { const shelf = d === GLOBAL_SKILLS ? "global" : "agent"; for (const n of listSkillNames(d)) { try { entries.push({ name: n, shelf, body: readSkill(d, n), description: skillDesc(d, n) }); } catch { /* */ } } }
+          const seen = new Set<string>(); const skills: Array<{ name: string; description: string; body: string }> = [];
+          for (const e of entries) { if (seen.has(e.name)) continue; seen.add(e.name); skills.push({ name: e.name, description: e.description, body: e.body }); }
           const r = auditSkills(skills);
+          const dups = crossShelfDuplicates(entries).filter((x) => x.divergent);
           const pct = r.total ? Math.round((100 * r.clean) / r.total) : 0;
           const gapline = Object.entries(r.gapCounts).sort((a, b) => b[1] - a[1]).map(([g, c]) => `${g} ×${c}`).join("  ") || "—";
           const top = r.flagged.slice(0, 20).map((f) => `  ⚠ ${f.name.slice(0, 46).padEnd(48)} ${f.gaps.map((g) => g.split(":")[0]).join(", ")}`).join("\n");
-          return { type: "output", output: `🏅 SOTA library audit — ${r.total} skills · ${r.clean} top-tier (${pct}%) · ${r.flagged.length} to upgrade\ngaps: ${gapline}\n${top}${r.flagged.length > 20 ? `\n  …and ${r.flagged.length - 20} more` : ""}` };
+          const dupline = dups.length ? `\n⧉ cross-shelf duplicates (consolidate — stale copy diverging): ${dups.map((x) => `${x.name} [${x.shelves.join("+")}]`).join(", ")}` : "";
+          return { type: "output", output: `🏅 SOTA library audit — ${r.total} skills · ${r.clean} top-tier (${pct}%) · ${r.flagged.length} to upgrade${dups.length ? ` · ${dups.length} dup` : ""}\ngaps: ${gapline}\n${top}${r.flagged.length > 20 ? `\n  …and ${r.flagged.length - 20} more` : ""}${dupline}` };
         }
         if (sub === "publish") {
           // SUPPLY CHAIN: preflight (default) → stage (sanitized review copy) → approve (publish to Custom

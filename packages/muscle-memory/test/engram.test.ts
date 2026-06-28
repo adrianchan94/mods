@@ -543,3 +543,20 @@ test("liveSkillVisible: graceful fallback with no/invalid agent (never throws, n
   expect(bad.visible).toBe(false);
   expect(typeof bad.note).toBe("string");
 });
+
+// ── cross-shelf duplicate detection: flag same-name DIVERGENT copies, ignore consistent mirrors ──
+test("crossShelfDuplicates: flags divergent same-name copies across shelves, not consistent ones", () => {
+  const { crossShelfDuplicates } = __mm;
+  const a = "## Procedure\n1. do x\n## Verification\n- ok";
+  const aPlus = a + "\n<!-- muscle-memory provenance: graduated -->"; // same content + provenance only
+  const b = "## Procedure\n1. do something DIFFERENT\n## Verification\n- ok";
+  // divergent: same name, different body across shelves → flagged
+  const div = crossShelfDuplicates([{ name: "s", shelf: "agent", body: a }, { name: "s", shelf: "global", body: b }]);
+  expect(div[0].divergent).toBe(true);
+  expect(div[0].shelves.sort()).toEqual(["agent", "global"]);
+  // consistent mirror (provenance/whitespace only) → NOT flagged as divergent
+  const same = crossShelfDuplicates([{ name: "s", shelf: "agent", body: a }, { name: "s", shelf: "global", body: aPlus }]);
+  expect(same[0].divergent).toBe(false);
+  // single copy → no entry
+  expect(crossShelfDuplicates([{ name: "u", shelf: "agent", body: a }]).length).toBe(0);
+});
