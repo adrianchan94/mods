@@ -54,6 +54,7 @@
     "eval": "bun run test/engram.eval.ts",
     "demo": "bun run test/engram.demo.ts",
     "transpile": "bun build mods/index.ts --target node --outfile /tmp/muscle-memory.build.js",
-    "verify": "npm run transpile && npm run test && npm run bench && npm run eval && npm run demo"
+    "verify": "npm run transpile && npm run test && npm run bench && npm run eval && npm run demo",
+    "demo:story": "node demo-story/demo-story.mjs"
   }
 }
