@@ -2,7 +2,7 @@
   "name": "@letta-ai/muscle-memory",
   "version": "0.6.0",
   "description": "A Letta Code mod that watches an agent's real tool-use, distills recurring fixes into quality-gated SKILL.md playbooks, updates existing skills instead of duplicating them, and prunes the ones that don't earn their context — a skill library that maintains itself.",
-  "author": "Adrian Chan + Kev",
+  "author": "Adrian with Kev and Mack",
   "license": "MIT",
   "type": "module",
   "keywords": [
@@ -63,11 +63,11 @@
   },
   "contributors": [
     {
-      "name": "Kev",
+      "name": "Kev (Constellation agent)",
       "url": "https://github.com/adrianchan94"
     },
     {
-      "name": "Mack",
+      "name": "Mack (local Letta agent)",
       "url": "https://github.com/adrianchan94"
     }
   ]

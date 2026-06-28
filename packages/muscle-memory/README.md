@@ -2,7 +2,7 @@
 
 **Every session becomes practice film.**
 
-Built by **Adrian Chan + Kev**. Mack handled heavyweight validation and package-closing assists.
+Built by **Adrian with Kev (Constellation agent) and Mack (local Letta agent).**
 
 `muscle-memory` is a Hermes-inspired, Letta-native skill management mod.
 
@@ -13,145 +13,590 @@ It watches a Letta agent's real tool-use, finds reusable procedural lessons, upd
 ![muscle-memory live demo](./demo.gif)
 
 ```txt
-agent work → practice film → reusable skills → safer sharing → better future agents
+work → tape → lesson → skill → Custom Skill → better future agent
 ```
 
 The first agent earns the lesson. The next agent inherits it.
 
 ---
 
-## What the real logs taught us
+## Why we built this
 
-We dogfooded `muscle-memory` against a real 503-event Letta Code log from actual coding sessions.
+We are big fans of Letta's direction: persistent agents, MemFS, Skills, Custom Skills, and Mods give agents a real substrate for long-term improvement.
 
-The useful finding: Letta gives us enough event tape to build a richer learning layer on top of the harness.
+We also liked a core idea from Hermes Agent: skill distillation from agent experience. That felt too important to leave outside the Letta ecosystem.
 
-In that log, many important coding lessons happened around shell/test runs — failed tests, broken builds, bad commands, then source edits and verification reruns. Those recoveries are easy for humans to see in the sequence, but they are not always represented as a tidy, already-labeled `tool_end` outcome.
+So `muscle-memory` is our attempt to bring that idea into Letta in a native way — not as a replacement for Letta's primitives, but as a layer that helps them compound.
 
-So `muscle-memory` adds behavioral repair-chain inference:
-
-```txt
-verify command fails
-→ source edit happens
-→ same verify command passes
-= reusable recovery pattern
-```
-
-On the real log, that recovered structure like:
-
-```txt
-18 inferred failures → 5 repair chains → 5 defensive lessons
-```
-
-The point is collaborative: Letta provides the raw game film; `muscle-memory` turns more of that film into coachable tape.
-
-That is the product gap this mod explores.
+Letta provides the court. `muscle-memory` watches the game film.
 
 ---
 
-## How it works — the brain's memory loop (Complementary Learning Systems)
+## The problem
+
+Skills are powerful because they are inspectable, portable, and reusable.
+
+But over time, a skill shelf can turn into a storage unit:
+
+- useful workflows stay buried in chat history
+- repeated mistakes keep repeating
+- duplicate skills pile up
+- local scar tissue is too private to share
+- stale skills keep pretending they still know ball
+- humans end up manually writing, merging, sanitizing, and pruning everything
+
+That is not a learning loop. That is a junk drawer with markdown.
+
+`muscle-memory` adds **Skill Ops**: the lifecycle around learned skills.
+
+---
+
+## What it does
+
+```txt
+observe real tool-use
+→ detect repeated workflows and recoveries
+→ distill or update a skill
+→ quality-gate the draft
+→ graduate useful skills
+→ preflight for sharing
+→ stage a sanitized Custom Skill
+→ approve publish
+→ emit an honest visibility receipt
+→ prune stale or duplicate skills
+```
+
+Not every rep becomes a skill.
+
+Sometimes the best status is:
+
+```txt
+💾 muscle-memory · nothing to save
+```
+
+That is the point. Self-improvement needs taste, not just storage.
+
+---
+
+## The film room
+
+While the agent works, `muscle-memory` watches the actual possession:
+
+```txt
+💾 muscle-memory · auto · watching
+```
+
+It tracks things like:
+
+- test/build failures
+- source edits
+- verification reruns
+- repeated recovery shapes
+- tool sequences that actually matter
+- staged, graduated, retired, and published skills
+
+Example dashboard:
+
+```txt
+💾 muscle-memory · reflect staged
+2567 reps observed
+9 managed · 1 staged
+
+squad distillations:
+  kev   graduated running-recorded-agent-demos-safely
+  mack  published my-cloud-audit
+  demo  graduated debugging-failing-tests
+```
+
+That is the agent's practice film.
+
+---
+
+## Learns lessons, not commands
+
+Real work is messy. The same literal command rarely repeats perfectly.
+
+`muscle-memory` looks for the reusable shape:
+
+```txt
+python test fails → source edit → python test passes
+node test fails   → source edit → node test passes
+go test fails     → source edit → go test passes
+```
+
+Those can become one durable skill:
+
+```txt
+debugging-failing-tests
+```
+
+Bad skill:
+
+```txt
+when command X fails, do exact command Y
+```
+
+Good skill:
+
+```txt
+when a verification command fails, read the failure, fix the source, rerun the same command, and do not patch the test unless the test is genuinely wrong
+```
+
+The lesson is the pattern, not the keystrokes.
+
+---
+
+## Update-first, because skill bloat is real
+
+Most generators create first and ask questions later.
+
+`muscle-memory` searches the existing shelf first. If a skill already covers the territory, it updates that skill instead of spawning a sibling.
+
+It also audits cross-shelf drift, so the same skill cannot quietly diverge between an agent-local shelf and the global Custom Skills shelf.
+
+```txt
+improve the library, don't grow a landfill
+```
+
+The roster has cuts.
+
+---
+
+## Quality gate before graduation
+
+A skill has to earn its context.
+
+Before graduation, drafts are checked for:
+
+- concrete symptoms
+- mechanism, not vibes
+- safe-first procedure
+- pitfalls
+- verification
+- reusable scope
+- no destructive shortcuts
+- no hollow checklist prose
+
+Example:
+
+```txt
+SOTA quality gate: PASS
+- concrete symptoms ✅
+- safe-first procedure ✅
+- verification ✅
+- pitfalls ✅
+```
+
+Thin skills do not get a jersey.
+
+---
+
+## ENGRAM: choosing what tape is worth replaying
+
+`muscle-memory` is not just a frequency counter.
+
+ENGRAM is the consolidation layer: deterministic heuristics that decide which experiences deserve replay, which one-shot lessons should be rescued, and which existing skills need updating because reality contradicted them.
+
+It includes:
+
+- **prediction-error reconsolidation** — when a skill's expectation fails, update the proven playbook instead of adding a random sibling
+- **synaptic tagging/capture** — rescue rare but important one-shot lessons near high-salience failures
+- **prioritized replay** — spend reflection on the most useful tape first
+
+Plain English:
+
+```txt
+watch the possessions that actually change tomorrow's game
+```
+
+
+---
+
+## How it works — the brain's memory loop
 
 Most agent-memory work focuses on hygiene after capture: forget, dedupe, rank, retrieve. `muscle-memory` adds a complementary layer for procedural skills: decide which traces should survive, when stored skills should change, and what deserves replay.
 
 | brain mechanism | muscle-memory | why it matters |
 |---|---|---|
-| **prediction-error-gated reconsolidation** | a *used* skill goes labile + is re-authored the moment its own prediction fails | fake-green prevention: a stale skill gets corrected, not appended-beside |
-| **synaptic tagging & capture** | a weak one-shot lesson is *rescued* if a salient event fires near it in time | fixes the false-negative that frequency-thresholds cause |
-| **reward-weighted prioritized replay** | sleep-time replays *salience-ranked*, *reverse from the win* (credit assignment), *interleaved* old+new | the right skills get rehearsed; anti-catastrophic-forgetting |
+| **prediction-error-gated reconsolidation** | a used skill goes labile + is re-authored when its own prediction fails | fake-green prevention: a stale skill gets corrected, not duplicated |
+| **synaptic tagging & capture** | a weak one-shot lesson is rescued if a salient event fires near it in time | fixes the false-negative that frequency thresholds cause |
+| **reward-weighted prioritized replay** | sleep-time replays salience-ranked, reverse from the win, interleaved old+new | the right skills get rehearsed; less catastrophic forgetting |
 
 Mapped onto Letta's own machinery: `experience.jsonl` as fast, decaying experience tape; `SKILL.md` as stable procedural memory; sleep-time/idling as consolidation; and permission hooks as optional defenses. The important bit is practical, not mystical: real execution traces can become better reusable procedures.
 
-### Compounds truly
-An UPDATE never destroys a proven skill: ambiguous overlap **refuses** an autonomous create (anti-bloat), the model is shown the existing skill and told to **patch, not rewrite**, frontmatter provenance is **preserved**, and a section-level diff makes any destructive rewrite reviewable. Reconsolidation routes a contradicted skill as a *labile UPDATE* — so re-learning **strengthens** the skill instead of spawning a sibling.
+---
 
-### Learns the lesson, not the command
-Real agent work is *varied* — the same literal command rarely recurs across sessions, so a per-command memory learns almost nothing. muscle-memory **generalizes**: a recovery seen as `python3` fails → edit → re-run **and** `node` fails → edit → re-run is the *same shape*, so they merge into ONE mature, cross-language skill — `recovering-from-failing-script-runs` ("re-run, read the error, edit the source, re-run — regardless of language"). The brain generalizes from instances; so does this. It's how the mod learns high-value skills from realistic, non-repetitive work where a literal-match system stays empty.
+## From local scar tissue to Custom Skill
 
-### Selective — a lean, high-signal library beats a bloated one
-Most tool-use is noise: `ls`, `cat`, the universal edit→run loop. muscle-memory **refuses** to distill it — shell-noise templates and trivial primitive-pair sequences never become skills. What graduates carries a real, non-obvious lesson (a recovery, a gotcha, a distinctive ritual). The agent's skill shelf stays small and every entry earns its context.
+A local skill often contains fingerprints:
 
-### Reliable & safe by construction
-- **Deterministic-first, headless-safe**: the skill always ships synchronously even if the process exits right after; model-authored richer skills are a best-effort upgrade on top.
-- **No freeze**: every UI phase is finite + a stalled model stream is bounded (60s) + stale phases self-heal on reload. (Fixes a real hour-long "✍️ writing skill…" freeze.)
-- **Enforced defenses**: a recurring, never-recovered failure becomes a real `permissions` ask/deny *before* the tool runs — not an advisory note.
-- **Never persists secrets**: redaction is allow-listed; it learns *legal tendencies* (flags, modes, recurring fixes), never credentials.
+```txt
+/Users/adrian/project
+agent-71b0883e...
+ZAI_API_KEY
+private project names
+```
+
+A shared Custom Skill needs to keep the lesson but lose the private residue.
+
+`muscle-memory` adds a gated publish flow:
+
+```txt
+graduate
+→ auto-preflight
+→ stage sanitized copy
+→ approve publish
+→ visibility receipt
+```
+
+Example sanitization:
+
+```txt
+/Users/adrian/project      → <local path>
+agent-71b0883e...          → <agent id>
+ZAI_API_KEY                → PROVIDER_API_KEY
+private project names      → <project>
+```
+
+The lesson survives. The fingerprints don't.
 
 ---
 
-## Receipts (all reproducible — `npm run verify`)
+## Honest visibility receipts
 
-| check | result |
-|---|---|
-| Unit tests (7 files across core/detect/gate/publish/engram/autopilot/ui) | **41/41 pass** |
-| Ablation bench (5 axes) | ENGRAM beats the v4 baseline on every tested axis |
-| Held-out predictive eval, 150 seeds, realistic Bash-heavy corpus | ≈94% of *learnable* held-out failures pre-empted; inference precision/recall 100%/100% on labeled ground truth |
-| Real 503-event Letta log | behavioral inference recovered 18 failures → 5 repair chains → 5 defensive lessons from ordinary tool-use tape |
-| Full skill lifecycle (deterministic demo, no model) | creation → graduation → use → refine → prune verified end-to-end (`npm run demo`) |
-| Live dogfood library | update-first routing, pruning, publish preflight, and cross-shelf duplicate detection exercised on real agent skills |
-| Generalized distillation, varied real work (python/node/go + ls/cat/git noise) | **one** high-value `recovering-from-failing-script-runs`; **all noise rejected** |
-| Live causal A/B (real agent, answer not in the code) | warm **3.0 tool-calls** vs cold **7.3** → **~2.4× fewer steps**, both succeed |
+Publishing is not just "file written."
 
-**Honest scope.** The held-out and real-log numbers are real and reproducible. The baseline comparison is scoped to outcome-labeled events vs behavioral inference on this log. The live A/B measures *learning-quality* (steps/tool-calls), not an end-task win-rate; a success-rate causal win is bounded by the secret-redaction invariant (the mod correctly refuses to memorize the unobtainable value). Nothing here asks you to trust vibes over receipts.
+When a skill is visible in the live agent-scoped skill index:
+
+```txt
+✓ confirmed live
+```
+
+When a Custom Skill was written to the global shelf but the current session has not refreshed:
+
+```txt
+on disk — /reload to surface
+```
+
+No fake readiness claims. No victory lap before the replay confirms it.
 
 ---
 
 ## Install
 
-```bash
-letta install <this-package>      # or add to your Letta mods dir
-letta /reload
-```
-
-Then just work. It captures your tool-use, and at sleep-time / session-close it consolidates. Defaults are conservative and reversible.
-
-### Modes (env)
-- `MM_AUTOPILOT=auto` — autonomously graduate *verified* repairs (default: stage for one-tap review).
-- `MM_REFLECT=auto|staged|off` — model-authored class-level skills at idle (default off; deterministic capture always runs).
-- `MM_CAPTURE=context|worked|off` — opt-in concreteness: capture **redacted** worked-examples (real error message; `worked` also adds the fix diff) so distilled skills carry concrete symptom→fix illustrations and DIVERSE failures of one class stay distinct instead of collapsing to a single fingerprint (default off = pure privacy-by-fingerprint; credentials/paths are always scrubbed at capture and the skill body is re-scanned before any write).
-- `MM_GUARD=ask|deny|off` — enforce learned anti-patterns as `permissions` before execution (default off).
-- `MM_NATIVE=blocks,passages` — project the consolidated skill index into the agent's core memory + archival (opt-in).
-- `MM_PUBLISH=auto` — promote graduated skills to the shared shelf (`~/.letta/skills`) so they appear under the app's **Custom Skills**, reusable by every agent (default off — graduation is agent-scoped; publishing is a deliberate promotion).
-
-> **Where a skill lives:** *staged* (pending) → *graduated* into the **agent's own** MemFS skills (that agent reuses it immediately) → *published* to the shared shelf under **Custom Skills** (reusable for all). `MM_PUBLISH=auto` (or the `publish` action / 1-tap) does the last hop.
-
-### Commands
-- `/muscle-memory lifecycle` — the whole cycle at a glance: staged → active (earning) → idle (prune candidates) → retired
-- `/muscle-memory audit` — **SOTA quality audit** of your whole skill library: which are top-tier vs need upgrading, and why (concreteness / diagnostic TELLs / safe-first / generality)
-- `/muscle-memory publish <skill>` — **publishability preflight** (read-only): score 0-100, tier (`agent-local` / `team-shareable` / `marketplace-candidate` / `blocked`), what to sanitize, duplicate-skill warnings
-- `/muscle-memory publish stage <skill>` — write a **sanitized** review copy (identifiers→placeholders, mechanism preserved) + provenance metadata to `$MM_STATE_DIR/publish-staged/`
-- `/muscle-memory publish approve <skill>` — publish the staged copy to shared **Custom Skills** (`~/.letta/skills/`); re-preflights + hard-blocks injected secrets; prints a visibility receipt
-- `/muscle-memory engram` — the consolidation plan (salience-ranked replay + reconsolidation flags), read-only
-- `/muscle-memory coverage` — which task-classes have a defending skill
-- `/muscle-memory staged` — skills waiting for one-tap graduation
-- `/muscle-memory events` — recent captured tool-use
-
-### The skill supply chain (what makes this more than a distiller)
-`learn → quality-gate → graduate → auto-preflight → stage (sanitized) → approve → shared Custom Skill → reuse → retire`. A graduated skill is agent-specific scar tissue; muscle-memory scores its **publishability**, **sanitizes identifiers** (never the mechanism/worked-examples), and promotes the good ones to portable Custom Skills other agents reuse — gated, reversible, never auto-published. See [`PUBLISH-PREFLIGHT-SPEC.md`](./PUBLISH-PREFLIGHT-SPEC.md).
-
-## Verify it yourself
+Before upstream npm publication, install from GitHub:
 
 ```bash
-npm run verify   # transpile + 41 unit tests + 5-axis bench + 150-seed eval + full-lifecycle demo
+letta install git:github.com/adrianchan94/muscle-memory
+/reload
 ```
 
-No runtime dependencies beyond Node builtins. MIT.
+If accepted into the official Letta mods catalog, the intended install path is:
+
+```bash
+letta install npm:@letta-ai/muscle-memory
+/reload
+```
+
+---
+
+## Quick start
+
+Conservative staged mode:
+
+```bash
+MM_REFLECT=staged MM_AGENT=demo letta
+```
+
+Automatic demo mode:
+
+```bash
+MM_REFLECT=auto MM_AGENT=demo letta
+```
+
+Optional worked-example capture:
+
+```bash
+MM_CAPTURE=context
+# or
+MM_CAPTURE=worked
+```
+
+Recommended defaults:
+
+```bash
+MM_REFLECT=staged
+MM_CAPTURE=off
+MM_PUBLISH=off
+```
+
+---
+
+## Commands
+
+```txt
+/muscle-memory
+```
+
+Dashboard: mode, recent events, managed skills, squad distillations, observed reps, and top repeated patterns.
+
+```txt
+/muscle-memory lifecycle
+```
+
+Full lifecycle view: staged → active → idle/prune candidates → retired. `skills` is an alias of `lifecycle`.
+
+```txt
+/muscle-memory engram
+```
+
+Read-only consolidation plan: salience-ranked replay and reconsolidation flags.
+
+```txt
+/muscle-memory events
+/muscle-memory squad
+/muscle-memory staged
+/muscle-memory coverage
+/muscle-memory audit
+```
+
+Audit checks quality gaps, stale skills, duplicate coverage, and cross-shelf divergence.
+
+```txt
+/muscle-memory publish <skill>
+/muscle-memory publish stage <skill>
+/muscle-memory publish approve <skill>
+```
+
+Read-only preflight → sanitized staged copy → approved shared Custom Skill.
+
+---
+
+## Agent-callable tools
+
+```txt
+muscle_memory_skill_read
+muscle_memory_skill_write
+muscle_memory_lifecycle_run
+```
+
+Read-only inspection, approval-gated skill writes, and safe lifecycle operations.
+
+---
+
+## Environment variables
+
+```txt
+MM_REFLECT=off|staged|auto
+MM_CAPTURE=off|context|worked
+MM_AGENT=<name>
+MM_AUTOPILOT=staged|auto
+MM_PUBLISH=off|auto
+MM_STATE_DIR=<path>
+```
+
+`MM_PUBLISH=auto` is explicit opt-in. Default publishing is off, and auto-publish still runs privacy/lint gates.
+
+---
+
+## Safety model
+
+`muscle-memory` is intentionally conservative.
+
+It does **not**:
+
+- auto-publish by default
+- silently install new mods
+- claim global Custom Skill visibility without checking what the current session can see
+- preserve raw secrets in skills
+- treat every repeated command as skill-worthy
+- overwrite good existing skills without review
+- implement the future router over memory/tools/guards/mods
+
+It does:
+
+- stage review-worthy changes
+- update existing skills before creating duplicates
+- hard-block secret-shaped values during publishing
+- sanitize private identifiers before sharing
+- emit lifecycle receipts
+- keep artifacts inspectable and git-backed
+- tell you when `/reload` is needed instead of pretending live visibility
+
+---
+
+## Hermes-inspired, Letta-native
+
+Hermes Agent has a great skill-distillation idea: agent experience can become reusable procedural memory.
+
+We wanted that pattern inside Letta, because Letta already has the primitives that make it feel native: MemFS, Skills, Custom Skills, Mods, tool events, and long-lived agents.
+
+`muscle-memory` focuses on the lifecycle around that idea:
+
+```txt
+distill
+update
+quality-gate
+graduate
+preflight
+stage
+publish
+confirm
+prune
+```
+
+The point is not to replace Hermes.
+
+The point is to bring a skill-distillation workflow into Letta's own ecosystem and make it play nicely with Letta's strengths.
+
+For deeper benchmark notes, see [`HERMES-COMPARISON.md`](./HERMES-COMPARISON.md).
+
+---
+
+## Validation
+
+```bash
+npm run verify
+```
+
+Current gate:
+
+```txt
+41 pass
+0 fail
+LIFECYCLE VERIFIED
+```
+
+Covers:
+
+- 9-module bundle/transpile
+- 7-file unit suite
+- ENGRAM benchmark
+- held-out eval
+- deterministic lifecycle demo
+- publish supply chain
+- cross-shelf duplicate detection
+- secret/publish hard blocks
+
+Package hygiene:
+
+```txt
+0 runtime dependencies
+Node >=20
+lean npm pack (~359KB unpacked)
+hero GIF excluded from npm tarball
+```
+
+---
 
 ## Project structure
 
-A layered, single-responsibility module tree (`core ← detect ← gate/publish/engram/lifecycle ← autopilot ← index`):
-
-```
-mods/
-  core.ts        paths · redaction · hashing · io · skill-file helpers · content scan · ui-events · mesh
-  detect.ts      fingerprints · templates · sequences · repair-chains · outcome inference · evidence
-  gate.ts        SOTA quality gate · library audit · cross-shelf dedup · draft authoring
-  publish.ts     the publish supply chain (preflight → stage → approve → visibility) + catalog
-  engram.ts      the CLS loop — prioritized replay · reconsolidation · defenses · neocortex bridge
-  lifecycle.ts   registry · curation · usage tracking · coverage · pruning · telemetry
-  autopilot.ts   autopilot · update-first routing · reviewAndAuthor · the autonomous reflect loop
-  ui.ts          the live panel renderer
-  index.ts       the mod entry: activate(), event handlers, command dispatch, tool registration
+```txt
+mods/core.ts        shared primitives, redaction, state helpers
+mods/detect.ts      outcome inference, repair-chain detection, worthiness filters
+mods/engram.ts      consolidation/replay/reconsolidation mechanics
+mods/gate.ts        quality gates, audit, cross-shelf duplicate checks
+mods/publish.ts     publishability, sanitization, staged approve flow
+mods/lifecycle.ts   registry, graduation, retirement, visibility helpers
+mods/autopilot.ts   reflection routing, update-first policy, evidence manifests
+mods/ui.ts          panel rendering
+mods/index.ts       Letta mod entrypoint: tools, commands, events, activation
 ```
 
-The package ships the source modules (the Letta CLI bundles them on load); the public API is the mod
-entry plus a `__mm` test surface.
+---
+
+## Receipts
+
+All reproducible from source:
+
+```txt
+npm run verify
+npm pack --dry-run
+```
+
+Recent gates:
+
+```txt
+41/41 tests passing
+bundle builds from 9 modules
+pack scanner clean
+0 runtime dependencies
+Custom Skill publish flow tested
+cross-shelf duplicate audit tested
+live TUI demo recorded from a real Letta session
+```
+
+The benchmark docs are receipts, not marketing commandments. The product pitch is simpler:
+
+```txt
+Letta gives agents durable memory and skills.
+muscle-memory helps keep those skills learning, clean, and shareable.
+```
+
+---
+
+## Limitations
+
+`muscle-memory` is not a magic recursive self-improvement engine.
+
+It is a bounded, inspectable skill lifecycle mod.
+
+Known boundaries:
+
+- full improvement router is roadmap, not shipped
+- global Custom Skills may require `/reload` before the current session sees them
+- live model A/B receipts are separate from deterministic demo scoreboards
+- publishability is for shared Custom Skills, not automatic external marketplace submission
+- quality gates reduce bad skills but do not replace human judgment for high-stakes workflows
+
+---
+
+## Roadmap
+
+Near-term:
+
+- fresh-agent reuse receipts across more task classes
+- cleaner Custom Skill publish review UX
+- dashboard empty-state polish
+
+Future:
+
+```txt
+skill vs memory vs guard vs tool vs eval vs mod vs prune
+```
+
+For now, the shipped product stays skill-centered and safe.
+
+---
+
+## Source of truth
+
+Standalone public install repo:
+
+```txt
+https://github.com/adrianchan94/muscle-memory
+```
+
+Canonical Letta Mods submission branch:
+
+```txt
+https://github.com/adrianchan94/mods/tree/mm-v4-ace/packages/muscle-memory
+```
+
+Until the package is accepted upstream, the fork branch is the integration source of truth.
+
+---
+
+## The thesis
+
+Manual skill management does not scale.
+
+Agents should not need humans to notice every repeated workflow, write every skill, merge every duplicate, sanitize every shared lesson, and prune every stale playbook.
+
+`muscle-memory` turns lived agent work into a maintained skill library.
+
+```txt
+work → lesson → skill → Custom Skill → better future agent
+```
+
+Every session becomes practice film.
