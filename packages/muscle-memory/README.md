@@ -89,10 +89,17 @@ Then just work. It captures your tool-use, and at sleep-time / session-close it 
 
 ### Commands
 - `/muscle-memory lifecycle` — the whole cycle at a glance: staged → active (earning) → idle (prune candidates) → retired
+- `/muscle-memory audit` — **SOTA quality audit** of your whole skill library: which are top-tier vs need upgrading, and why (concreteness / diagnostic TELLs / safe-first / generality)
+- `/muscle-memory publish <skill>` — **publishability preflight** (read-only): score 0-100, tier (`agent-local` / `team-shareable` / `marketplace-candidate` / `blocked`), what to sanitize, duplicate-skill warnings
+- `/muscle-memory publish stage <skill>` — write a **sanitized** review copy (identifiers→placeholders, mechanism preserved) + provenance metadata to `$MM_STATE_DIR/publish-staged/`
+- `/muscle-memory publish approve <skill>` — publish the staged copy to shared **Custom Skills** (`~/.letta/skills/`); re-preflights + hard-blocks injected secrets; prints a visibility receipt
 - `/muscle-memory engram` — the consolidation plan (salience-ranked replay + reconsolidation flags), read-only
 - `/muscle-memory coverage` — which task-classes have a defending skill
 - `/muscle-memory staged` — skills waiting for one-tap graduation
 - `/muscle-memory events` — recent captured tool-use
+
+### The skill supply chain (what makes this more than a distiller)
+`learn → quality-gate → graduate → auto-preflight → stage (sanitized) → approve → shared Custom Skill → reuse → retire`. A graduated skill is agent-specific scar tissue; muscle-memory scores its **publishability**, **sanitizes identifiers** (never the mechanism/worked-examples), and promotes the good ones to portable Custom Skills other agents reuse — gated, reversible, never auto-published. See [`PUBLISH-PREFLIGHT-SPEC.md`](./PUBLISH-PREFLIGHT-SPEC.md).
 
 ## Verify it yourself
 

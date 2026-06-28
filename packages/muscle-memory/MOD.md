@@ -46,3 +46,8 @@ Privacy is **double-gated**: every fragment is credential/path-scrubbed at captu
 - **Default-safe:** reflective review + autopilot are **staged** unless you opt into `auto`; the autonomous session-end trigger is **off** unless `MM_REFLECT`/`MM_AUTOPILOT` is set.
 
 Pre-action failure defenses are **advisory** (they log/warn before a known-bad repeat) — not hard blocks.
+
+## Library audit + the skill supply chain (v1.1)
+Beyond distilling, muscle-memory governs skill QUALITY and DISTRIBUTION:
+- `/muscle-memory audit` — scores every skill in the library (SOTA gate: concreteness, diagnostic TELLs, safe-first, generality) and flags sub-SOTA ones. The same gate self-corrects every newly distilled skill via targeted regeneration.
+- **Supply chain** (`learn → graduate → auto-preflight → stage → approve → Custom Skill`): on graduation a read-only **publishability preflight** fires (score · tier · recommended shelf). `/muscle-memory publish stage <skill>` writes a **sanitized** review copy (identifiers→placeholders, mechanism preserved) + provenance metadata; `/muscle-memory publish approve <skill>` promotes it to shared Custom Skills (`~/.letta/skills/`), re-preflighting + hard-blocking injected secrets, with a visibility receipt. **Never auto-publishes; no remote push.** Tiers: `agent-local` · `team-shareable` · `marketplace-candidate` · `blocked`.
