@@ -2082,6 +2082,7 @@ const REFLECT_HANDLED = join(STATE_DIR, "reflect-handled.json");
 export type UiEvent = { ts: number; phase: string; summary: string; skill?: string; action?: string; route?: string; source: "muscle-memory" };
 function appendUiEvent(e: { phase: string; summary: string; skill?: string; action?: string; route?: string }) { try { ensureDir(); appendJsonl(UI_EVENTS, { ts: Date.now(), source: "muscle-memory", ...e }); } catch { /* */ } }
 let livePanel: any = null; // set in activate(); lets state changes re-render the panel LIVE (interactive mirror)
+function setLivePanel(p: any) { livePanel = p; } // setter so the entry module can wire the panel across the module boundary
 function writeUiState(s: Record<string, unknown>) { try { ensureDir(); writeFileSync(UI_STATE, JSON.stringify({ ...readUiState(), ...s, ts: Date.now() })); } catch { /* */ } try { livePanel?.update(); } catch { /* */ } }
 function readUiState(): Record<string, any> { try { return existsSync(UI_STATE) ? JSON.parse(readFileSync(UI_STATE, "utf8")) : {}; } catch { return {}; } }
 function loadUiEvents(n = 8): UiEvent[] { if (!existsSync(UI_EVENTS)) return []; const out: UiEvent[] = []; for (const l of readFileSync(UI_EVENTS, "utf8").trim().split("\n")) { if (!l) continue; try { out.push(JSON.parse(l)); } catch { /* */ } } return out.slice(-n); }
@@ -2467,7 +2468,7 @@ export default function activate(letta: any) {
   if (letta.capabilities?.ui?.panels && letta.ui?.openPanel) {
     try {
       panel = letta.ui.openPanel({ id: "muscle-memory-live", order: 20, render: () => { try { return renderMuscleMemoryPanel(readUiState()); } catch { return []; } } });
-      livePanel = panel; // enable LIVE re-render on every state change
+      setLivePanel(panel); // enable LIVE re-render on every state change
       // SELF-HEAL on (re)load: a reflect cannot survive a reload, so any transient phase persisted here
       // is necessarily stale (interrupted mid-author). Reset it to idle so the panel never opens stuck on
       // "✍️ writing skill…" (the hour-long freeze Adrian hit 2026-06-27). Then repaint immediately.
