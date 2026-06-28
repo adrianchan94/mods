@@ -27,6 +27,13 @@ You have a self-evolving skill foundry. It observes your tool-use, distills **cl
 ## Visibility (v3.3)
 A capability-guarded panel (`muscle-memory-live`, order 20) + the `/muscle-memory` dashboard surface **finished** self-improvement summaries (reviewing → route → staged/updated → manifest), backed by `ui-events.jsonl` (redacted lifecycle receipts only — no chain-of-thought, no raw args). Headless/Desktop (no panel capability) → the `/muscle-memory` command shows the same content. Set `MM_REFLECT=staged` to activate the autonomous reviewer — it fires on its own after each turn (Hermes-style background nudge, gated to mature+not-yet-distilled patterns) and at session end.
 
+## MM_CAPTURE — worked-example capture (opt-in, default OFF)
+By default muscle-memory captures **structural fingerprints only** (max privacy). Set `MM_CAPTURE` to restore concreteness + breadth and close the depth gap vs Hermes (benchmarked −39.5 → peer; see `head-to-head/CAMPAIGN.md`):
+- `MM_CAPTURE=context` — Tier 1: + redacted real error message + touched symbol (restores breadth + most concreteness).
+- `MM_CAPTURE=worked` — Tier 2: + redacted fix diff (before→after) for max concreteness.
+
+Privacy is **double-gated**: every fragment is credential/path-scrubbed at capture (`redactFragment`, shared secret cascade) and the final skill body is re-scanned by `scanSkillContent` before any write. Diverse symptom→fix pairs are preserved as multiple worked-examples on one repair chain (no fingerprint-collapse), then generalized into one class-level skill *illustrated by* the real cases. The deterministic (model-free) fallback embeds the worked-examples too.
+
 ## When to use
 - After a non-trivial session, run `reflect_plan` → if it would capture a durable lesson, `reflect` to distill/update a skill.
 - Don't hand-write a skill if `reflect_plan` shows one already covers it — let update-first fold the new pitfalls in.

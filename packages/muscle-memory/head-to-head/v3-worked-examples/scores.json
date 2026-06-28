@@ -1,0 +1,38 @@
+{
+  "method": "symmetric realistic sessions; both author on z.ai GLM-5.2; neutral blind judge (claude/opus), order-swapped, 7 axes /70; MM_CAPTURE=worked",
+  "failing_test": {
+    "before_capture_fingerprint_only": {
+      "hermes": 60.0,
+      "mm": 20.5,
+      "delta": -39.5
+    },
+    "single_session": {
+      "hermes": 53.0,
+      "mm": 59.5,
+      "delta": 6.5,
+      "stability": [
+        2.0,
+        3.5,
+        3.5,
+        6.5
+      ]
+    },
+    "equal_4_session": {
+      "hermes": 59.5,
+      "mm": 59.0,
+      "delta": -0.5
+    },
+    "scaling_8_session": {
+      "hermes": 59.5,
+      "mm": 57.0,
+      "delta": -2.5,
+      "note": "hermes wins depth (pitfalls 9.5/concreteness 9.5); mm wins hygiene 9 vs 7; hermes 8954B vs mm 3954B"
+    }
+  },
+  "lint_single_session": {
+    "hermes": 59.0,
+    "mm": 57.75,
+    "delta": -1.25
+  },
+  "verdict": "capture took mm from -39.5 (crushed) to peer. mm WINS cold-start/low-session (its whole-history aggregation gives breadth immediately) + hygiene/determinism/privacy; PARITY at equal/high experience; residual depth gap is structural (hermes sees full session, mm a redacted digest)."
+}

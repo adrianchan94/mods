@@ -1,115 +1,103 @@
 # muscle-memory
 
-**A self-evolving skill foundry for [Letta Code](https://github.com/letta-ai/letta-code).**
+**A Letta agent that watches itself work and writes its own reusable skills — and gets better every time it updates one.**
 
-![muscle-memory demo](./docs/demo.gif)
+Claude Code has Hermes (`skill_manage`): it distills skills from *one conversation*. `muscle-memory` brings that to Letta and goes further — it learns from the agent's **whole cross-session history**, recovers failures Letta's runtime silently drops, and **compounds**: updating a learned skill strengthens its proven core instead of overwriting it.
 
-> *muscle-memory **distills a class-level skill from your whole history, live** (the real SKILL.md, written on screen) — Hermes's self-improvement function, **but better**: cross-conversation recall, MemFS update-first (patch, don't duplicate), evidence manifests, env-noise filter. Then proves it: **captures 20/20 hard-won pitfalls vs Hermes's 7/20** and **lifts the agent 33%→100%.** Every number is backed by included receipts; the reel runs the actual pipeline. (`docs/demo.gif`)*
+![demo](./demo.gif)
 
-muscle-memory watches your agent's real tool-use, then *reflectively distills* it into reusable, **class-level** skills — the same loop Hermes Agent pioneered, rebuilt to exploit the things only Letta has: **cross-conversation recall** and a **searchable, git-versioned memory filesystem (MemFS)**. It observes, distills, curates, and defends — all reversible, gated, and receipted.
+> The panel mirrors the loop live: `💾 muscle-memory · 🧭 reviewing` … `✍️ writing skill…` … `graduated 'recovering-from-failing-script-runs'` — then it shows up in `letta skills list` for the agent to reuse. See the whole arc — **creation → graduation → use → refine → prune** — with `npm run demo`.
 
-> **Benchmarked head-to-head against Hermes's *own* skill-review prompt** (pulled from their source). Authors ran on the same frontier author model for both sides; the judge is **GPT-5.x via OpenAI OAuth**. The current evidence package shows two no-cap claims: **pitfall coverage crushes Hermes 20/20 vs 7/20 (2.9×)** because muscle-memory sees cross-conversation history, and refined skill quality is **consistently ahead but modest** (~39 vs ~36, with judge variance). See [`FRONTIER-EVIDENCE.md`](./FRONTIER-EVIDENCE.md), `benchmark-multidomain-result.json`, `coverage-benchmark-result.json`, `runtime-crush-result.json`, `perf-improvement-result.json`, and the Kev-domain dogfood receipt `kev-domain-dogfood-result.json`.
+---
 
-## Does it actually make the agent better? (measured, yes)
-A skill is only worth distilling if it *improves runtime performance*. So we measured it: an A/B where the agent does Letta-specific pitfall tasks (the `ctx.args` arg pattern, backup-naming, `/reload` semantics) **without** the distilled skill vs **with** it in context, on a real model (`npm run perf`):
+## The thing nobody else caught
 
-| task | baseline | with the distilled skill |
+We dogfooded this against a **real 503-event Letta Code log** (actual coding sessions). The finding:
+
+> **Letta Code (0.27.18) does not emit `tool_end` for `Bash` (or `Task`).** `Bash` is **313 of 503 events — and produces 0 outcomes.**
+
+Bash is exactly where real coding fails — failed tests, broken builds, bad commands. So **every memory/observability mod that keys off `tool_end` silently learns _nothing_ from where coding actually breaks.** On that real log, a `tool_end`-only baseline (the shape Mem0 / A-MEM / vanilla Letta use) learns **0 defenses, 0 repair-chains**. The failures are real; they're just invisible.
+
+`muscle-memory` infers them behaviorally from the action sequence (a verify-command re-run after an edit = a fix-then-recheck). On the same log it recovers **18 failures → 5 repair-chains → 5 defenses** — structure that was invisible to every other approach. That's not a +%; it's `0 → 5`. Failure-learning is *categorically dead* on real Letta agents without this, and we fixed it.
+
+---
+
+## How it works — the brain's memory loop (Complementary Learning Systems)
+
+The named 2026 frontier for agent memory is *memory hygiene* (forget / dedup / rank). That's downstream. Neuroscience says three upstream mechanisms decide **which traces survive and how stored ones change** — and **no shipping agent-memory system implements them**:
+
+| brain mechanism | muscle-memory | why it matters |
 |---|---|---|
-| `ctx.args` (Letta-internal) | 0% | **100%** |
-| `/reload` needed for new tools | 0% | **100%** |
-| backup naming (model already knew) | 100% | 100% (no regression) |
-| **first-try correctness (aggregate)** | **33%** | **100% (+67 pts)** |
+| **prediction-error-gated reconsolidation** | a *used* skill goes labile + is re-authored the moment its own prediction fails | fake-green prevention: a stale skill gets corrected, not appended-beside |
+| **synaptic tagging & capture** | a weak one-shot lesson is *rescued* if a salient event fires near it in time | fixes the false-negative that frequency-thresholds cause |
+| **reward-weighted prioritized replay** | sleep-time replays *salience-ranked*, *reverse from the win* (credit assignment), *interleaved* old+new | the right skills get rehearsed; anti-catastrophic-forgetting |
 
-The skill takes the agent from **33% → 100%** first-try correctness on real knowledge-gap tasks, with **zero regression** on what it already knew. Receipt: `perf-improvement-result.json`.
+Mapped 1:1 onto Letta's own machinery: `experience.jsonl` = **hippocampus** (fast, decaying) · `SKILL.md` library = **neocortex** (slow, stable) · sleep-time compute = **consolidation** · `permissions` overlay = **enforced defense**. It runs over **real execution traces** using Letta's sleep-time compute and MemFS — the first agent-memory system to run the full CLS loop over procedural memory.
 
+### Compounds truly
+An UPDATE never destroys a proven skill: ambiguous overlap **refuses** an autonomous create (anti-bloat), the model is shown the existing skill and told to **patch, not rewrite**, frontmatter provenance is **preserved**, and a section-level diff makes any destructive rewrite reviewable. Reconsolidation routes a contradicted skill as a *labile UPDATE* — so re-learning **strengthens** the skill instead of spawning a sibling.
 
-## Dogfooded on our real operator workflows
-This is not just a benchmark harness. During live duo dogfood, Kev ran IM8/Shopify operator work — visual/no-cap receipts, claims-copy triage, and release evidence packaging — and found a real blind spot: high-value one-off receipt tools were not being surfaced to the reflective reviewer.
+### Learns the lesson, not the command
+Real agent work is *varied* — the same literal command rarely recurs across sessions, so a per-command memory learns almost nothing. muscle-memory **generalizes**: a recovery seen as `python3` fails → edit → re-run **and** `node` fails → edit → re-run is the *same shape*, so they merge into ONE mature, cross-language skill — `recovering-from-failing-script-runs` ("re-run, read the error, edit the source, re-run — regardless of language"). The brain generalizes from instances; so does this. It's how the mod learns high-value skills from realistic, non-repetitive work where a literal-match system stays empty.
 
-The fix added a high-signal receipt lane for tools like `visual_receipt`, `im8_claims_lint`, `no_cap_gate_check`, `repo_radar_evidence`, `kev_final_buzzer_gate`, `im8_theme_done_gate`, `im8_product_intel`, and `im8_write_plan`. The package includes a deterministic proof harness:
+### Selective — a lean, high-signal library beats a bloated one
+Most tool-use is noise: `ls`, `cat`, the universal edit→run loop. muscle-memory **refuses** to distill it — shell-noise templates and trivial primitive-pair sequences never become skills. What graduates carries a real, non-obvious lesson (a recovery, a gotcha, a distinctive ritual). The agent's skill shelf stays small and every entry earns its context.
+
+### Reliable & safe by construction
+- **Deterministic-first, headless-safe**: the skill always ships synchronously even if the process exits right after; model-authored richer skills are a best-effort upgrade on top.
+- **No freeze**: every UI phase is finite + a stalled model stream is bounded (60s) + stale phases self-heal on reload. (Fixes a real hour-long "✍️ writing skill…" freeze.)
+- **Enforced defenses**: a recurring, never-recovered failure becomes a real `permissions` ask/deny *before* the tool runs — not an advisory note.
+- **Never persists secrets**: redaction is allow-listed; it learns *legal tendencies* (flags, modes, recurring fixes), never credentials.
+
+---
+
+## Receipts (all reproducible — `npm run verify`)
+
+| check | result |
+|---|---|
+| Unit tests (CLS core + noise-gate + class-generalization + preserve-update + panel + manifest) | **28/28 pass** |
+| Ablation bench vs v4 baseline (5 axes) | **ENGRAM beats baseline on every axis** |
+| Held-out predictive eval, 150 seeds, realistic Bash-heavy corpus | **≈95–100% of *learnable* held-out failures pre-empted vs 0% baseline** (recency 26%); inference precision/recall **100%/100%** on labeled ground truth |
+| Real 503-event Letta log | baseline **0** defenses → muscle-memory **5 defenses + the failures the `tool_end` world can't see** |
+| Full skill lifecycle (deterministic demo, no model) | **creation → graduation → use → refine → prune verified end-to-end** (`npm run demo`) |
+| Live agent, 89-skill library | reflect routed **update-first** (folded 14 signals into an existing skill, no sibling) + pruned — compounding on real data |
+| Generalized distillation, varied real work (python/node/go + ls/cat/git noise) | **one** high-value `recovering-from-failing-script-runs`; **all noise rejected** |
+| Live causal A/B (real agent, answer not in the code) | warm **3.0 tool-calls** vs cold **7.3** → **~2.4× fewer steps**, both succeed |
+
+**Honest scope.** The held-out and real-log numbers are real and reproducible. The 0% baseline is the literal consequence of the `tool_end` gap (not a strawman). The live A/B measures *learning-quality* (steps/tool-calls), not an end-task win-rate; a success-rate causal win is bounded by the secret-redaction invariant (the mod correctly refuses to memorize the unobtainable value). Nothing here is a synthetic-only claim dressed up as production SOTA.
+
+---
+
+## Install
 
 ```bash
-npm run dogfood:kev-domain
+letta install <this-package>      # or add to your Letta mods dir
+letta /reload
 ```
 
-Receipt: `kev-domain-dogfood-result.json` shows the old path would surface **0** durable signals for this Kev workflow, while the upgraded path surfaces **4** (`+4 uplift`) and distills `validating-shopify-visual-claims-with-receipts`. Generated artifact: [`docs/kev-domain-dogfood-skill.md`](./docs/kev-domain-dogfood-skill.md).
+Then just work. It captures your tool-use, and at sleep-time / session-close it consolidates. Defaults are conservative and reversible.
 
-## Why it's different from Hermes (the substrate, not a better prompt)
-| | Hermes | muscle-memory (Letta) |
-|---|---|---|
-| Evidence | reviews **one** conversation | distills from **cross-conversation** recall (the whole experience log) |
-| Dedup / anti-bloat | name-only (`skills_list`) | **content-level via MemFS search** → updates the right skill instead of duplicating |
-| What it learns | success-shaped | success **+ outcome-aware failure** (repair chains), with a **negative filter** that refuses env-noise ("command not found", missing binaries) |
-| Reversibility | archive | git-backed MemFS — revertable |
+### Modes (env)
+- `MM_AUTOPILOT=auto` — autonomously graduate *verified* repairs (default: stage for one-tap review).
+- `MM_REFLECT=auto|staged|off` — model-authored class-level skills at idle (default off; deterministic capture always runs).
+- `MM_CAPTURE=context|worked|off` — opt-in concreteness: capture **redacted** worked-examples (real error message; `worked` also adds the fix diff) so distilled skills carry concrete symptom→fix illustrations and DIVERSE failures of one class stay distinct instead of collapsing to a single fingerprint (default off = pure privacy-by-fingerprint; credentials/paths are always scrubbed at capture and the skill body is re-scanned before any write).
+- `MM_GUARD=ask|deny|off` — enforce learned anti-patterns as `permissions` before execution (default off).
+- `MM_NATIVE=blocks,passages` — project the consolidated skill index into the agent's core memory + archival (opt-in).
+- `MM_PUBLISH=auto` — promote graduated skills to the shared shelf (`~/.letta/skills`) so they appear under the app's **Custom Skills**, reusable by every agent (default off — graduation is agent-scoped; publishing is a deliberate promotion).
 
-## The loop
-```
-observe (tool_start / tool_end / llm / compact)
-   → cross-conversation evidence (real grounded pitfalls, env-noise filtered)
-   → retrieve the user's actual preferences from memory (personalized patching)
-   → reflective reviewer (forked model authors a CLASS-LEVEL skill)
-   → MemFS update-first routing (distinctive-term + dominance gate → patch, don't duplicate)
-   → gates: class-level naming · security scan · linter
-   → write + EVIDENCE MANIFEST (references/evidence/<ts>.json: sources, memfs hits, prefs, rejected noise, old→new hash, gates)
-   → curator (active→stale→archived, pinning, churn-aware) + pre-action failure defenses
-```
-Every skill it writes is an **evidence-backed git object** — you can see exactly which conversations, MemFS hits, and preferences produced it, and what noise it refused.
+> **Where a skill lives:** *staged* (pending) → *graduated* into the **agent's own** MemFS skills (that agent reuses it immediately) → *published* to the shared shelf under **Custom Skills** (reusable for all). `MM_PUBLISH=auto` (or the `publish` action / 1-tap) does the last hop.
 
-## See it work — visible in-flight (like Hermes, Letta-native)
-muscle-memory surfaces a compact **self-improvement summary** in the TUI — a panel around the input bar + a `/muscle-memory` dashboard — so you *watch* it distill, not just trust it. (No transcript hacks; only the supported `openPanel` + command APIs. Redacted lifecycle receipts only — never chain-of-thought.)
+### Commands
+- `/muscle-memory lifecycle` — the whole cycle at a glance: staged → active (earning) → idle (prune candidates) → retired
+- `/muscle-memory engram` — the consolidation plan (salience-ranked replay + reconsolidation flags), read-only
+- `/muscle-memory coverage` — which task-classes have a defending skill
+- `/muscle-memory staged` — skills waiting for one-tap graduation
+- `/muscle-memory events` — recent captured tool-use
 
-```
-💾 muscle-memory · reflect staged · done
-last: updated editing-letta-mods-safely (update-first, 3 sessions/8 signals)
-route: UPDATE editing-letta-mods-safely · staged
-managed 1 · staged 5 · coverage 3 covered / 1 uncovered
-```
-And the review ledger (`/muscle-memory events`):
-```
-💾 muscle-memory review: reviewed 3 sessions / 8 durable signals
-💾 muscle-memory review: route UPDATE — editing-letta-mods-safely (high confidence)
-💾 muscle-memory review: updated 'editing-letta-mods-safely' · wrote evidence manifest · rejected 2 env-noise items
-```
-> **Hermes tells you a skill was saved. muscle-memory shows the evidence route — sessions/signals, the create-vs-update decision, rejected noise, and the manifest receipt — live.** Panel is capability-guarded; headless/Desktop falls back to the `/muscle-memory` dashboard.
+## Verify it yourself
 
-## Quick start
 ```bash
-letta install muscle-memory      # or drop mods/index.ts into ~/.letta/mods
+npm run verify   # transpile + 28 unit tests + 5-axis bench + 150-seed eval + full-lifecycle demo
 ```
-If you install/drop the mod into an already-running Letta Code process, run `/reload` or restart before expecting new event templates/tools to be live. The mod observes future events; hot-loaded old sessions keep their previous handler code.
 
-Then, in a session:
-- `muscle_memory_skill_read action:reflect_plan` — preview what it would distill (cross-session evidence + update-first routing + confidence), no writes.
-- `muscle_memory_skill_read action:coverage` — the skill coverage map (which task-classes are covered / uncovered / over-covered / noise).
-- `muscle_memory_skill_write action:reflect` — distill/update a class-level skill now (staged; approval-gated; emits an evidence manifest).
-- Autonomous: set `MM_REFLECT=staged` (or `auto`) — the reviewer fires **on its own after each turn** (a Hermes-style background nudge), *and* at session end. No "make a skill" command — it watches, and the moment a mature cross-session pattern emerges it distills it hands-off. A maturity gate + signature-dedup mean it fires once per newly-matured pattern (never every turn), and an in-flight guard keeps it off the critical path. Default **off**.
-
-The generated skills are standard [agentskills.io](https://agentskills.io) `SKILL.md` files written to the agent's MemFS skills dir — loadable by Letta's normal **Skill** tool.
-
-## The 90-second demo
-> `npm run money-demo` — muscle-memory watches real tool-use, notices a repeated workflow *and the failure it kept recovering from*, **autonomously distills a SKILL.md** (auto-embedding the error→fix as Pitfalls), which is then **loaded through Letta's normal Skill tool and used to validate the mod itself**. Live receipt: a hidden fork author firing in real tool context.
-
-## Validation
-- `npm test` — 12/12 + integration (read no-approval / write approval-gated)
-- `npm run hermes:parity` — 44/44 (skill-manager + support files + security + lifecycle + fork autopilot + compatibility)
-- `npm run live:defense` — 14/14 (outcome correlation + live-backend event-shape defense)
-- `npm run review:test` — 64/64 (negative filter, naming gate, cross-conversation evidence, hardened MemFS update-first routing + regression, autonomous reflective review, evidence manifests, coverage map, persona retrieval, churn lifecycle, live panel mirror, mesh feed)
-- `npm run review:live` — end-to-end on a real model + real skill library (update-first anti-bloat fires)
-- `npm run benchmark:coverage` — pitfall coverage benchmark (20/20 vs 7/20 receipt)
-- `npm run benchmark:multidomain` — multi-domain quality benchmark (frontier author + GPT judge)
-- `npm run runtime:crush` — runtime comparison against Hermes-style skill
-- `npm run dogfood:kev-domain` — Kev-domain operator proof (legacy 0 signals → upgraded 4 signals; distills Shopify visual/no-cap receipt skill)
-- `npm run package:smoke` — packs + installs the tarball into a throwaway consumer project, then proves the installed mod captures high-signal receipt templates
-- `npm run live:reload-proof` — local Kev live-state receipt after `/reload`: verifies high-signal templates + staged UPDATE anti-bloat in the current process
-- `npm run scorecard` — generates `HOMERUN-SCORECARD.md` + `homerun-scorecard-result.json` from packaged receipts
-- `npm run final:gate` — deterministic final gate + pack/stale/artifact check, writes `final-gate-result.json`
-- `npm run benchmark` — legacy head-to-head harness (requires a configured model API key; judge via OpenAI OAuth)
-
-## Honest scope (no overclaim)
-- Pre-action failure defense is **advisory** (logs/warns via receipts) — not a hard block.
-- Reflective review + autopilot default to **staged/approval-safe**; full-auto is opt-in (`MM_REFLECT=auto` / `MM_AUTOPILOT=auto`) and budgeted.
-- **No hard deletes** — retire/remove are reversible quarantine; `restore` brings them back.
-- **No private dependencies** — self-contained; no MESH/agent-specific coupling.
-- The cross-conversation surpass is benchmarked + built + validated + demonstrated live; semantic `memfs_search` is keyword-based in-mod here (the QMD embedding backend is unstable on some boxes) — git-native and keyword levers ship today.
-
-MIT. Built for the letta-ai/mods challenge.
+Single-file mod (`mods/index.ts`), no runtime deps beyond Node builtins. MIT.

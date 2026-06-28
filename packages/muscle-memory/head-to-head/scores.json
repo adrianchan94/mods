@@ -1,0 +1,215 @@
+{
+  "model_author": "glm-5.2 (z.ai coding plan)",
+  "judge": "neutral strong model (claude/opus), blind A/B, order-swapped",
+  "axes": [
+    "altitude",
+    "reusability",
+    "pitfalls",
+    "hygiene",
+    "actionability",
+    "safety",
+    "concreteness"
+  ],
+  "per_class": {
+    "failing-test": {
+      "hermes": {
+        "altitude": 9.0,
+        "reusability": 9.0,
+        "pitfalls": 8.0,
+        "hygiene": 9.0,
+        "actionability": 8.5,
+        "safety": 9.0,
+        "concreteness": 7.5
+      },
+      "mm": {
+        "altitude": 2.0,
+        "reusability": 2.0,
+        "pitfalls": 3.0,
+        "hygiene": 4.5,
+        "actionability": 3.0,
+        "safety": 4.0,
+        "concreteness": 2.0
+      },
+      "hermes_total": 60.0,
+      "mm_total": 20.5
+    },
+    "lint": {
+      "hermes": {
+        "altitude": 8.5,
+        "reusability": 9.0,
+        "pitfalls": 9.0,
+        "hygiene": 9.0,
+        "actionability": 9.0,
+        "safety": 9.0,
+        "concreteness": 8.5
+      },
+      "mm": {
+        "altitude": 6.0,
+        "reusability": 6.0,
+        "pitfalls": 8.0,
+        "hygiene": 8.0,
+        "actionability": 8.0,
+        "safety": 8.0,
+        "concreteness": 7.0
+      },
+      "hermes_total": 62.0,
+      "mm_total": 51.0
+    },
+    "npm": {
+      "hermes": {
+        "altitude": 9.0,
+        "reusability": 9.0,
+        "pitfalls": 8.0,
+        "hygiene": 8.5,
+        "actionability": 9.0,
+        "safety": 8.0,
+        "concreteness": 8.5
+      },
+      "mm": {
+        "altitude": 2.0,
+        "reusability": 2.5,
+        "pitfalls": 3.0,
+        "hygiene": 6.0,
+        "actionability": 5.0,
+        "safety": 5.5,
+        "concreteness": 3.0
+      },
+      "hermes_total": 60.0,
+      "mm_total": 27.0
+    }
+  },
+  "raw_orderings": {
+    "failing-test": {
+      "H1": {
+        "A": {
+          "altitude": 9,
+          "reusability": 9,
+          "pitfalls": 8,
+          "hygiene": 9,
+          "actionability": 8,
+          "safety": 9,
+          "concreteness": 7
+        },
+        "B": {
+          "altitude": 2,
+          "reusability": 2,
+          "pitfalls": 3,
+          "hygiene": 5,
+          "actionability": 3,
+          "safety": 4,
+          "concreteness": 2
+        },
+        "note": "A is a genuinely reusable, class-level fail->fix->pass discipline with concrete rules, while B overfits to a fabricated \"known fix\" (`Edit.py`) from 3 sessions that doesn't generalize or actually tell you what to change."
+      },
+      "M1": {
+        "note": "A is a degenerate template hardcoded to specific placeholder tokens (Edit.py, \"assertion\") from 3 observed runs, with no real debugging insight; B is a genuine, generalizable fail->fix->pass discipline with realistic anti-patterns and safe-first rules.",
+        "A": {
+          "altitude": 2,
+          "reusability": 2,
+          "pitfalls": 3,
+          "hygiene": 4,
+          "actionability": 3,
+          "safety": 4,
+          "concreteness": 2
+        },
+        "B": {
+          "altitude": 9,
+          "reusability": 9,
+          "pitfalls": 8,
+          "hygiene": 9,
+          "actionability": 9,
+          "safety": 9,
+          "concreteness": 8
+        }
+      }
+    },
+    "lint": {
+      "H1": {
+        "A": {
+          "altitude": 9,
+          "reusability": 9,
+          "pitfalls": 9,
+          "hygiene": 9,
+          "actionability": 9,
+          "safety": 9,
+          "concreteness": 8
+        },
+        "B": {
+          "altitude": 6,
+          "reusability": 6,
+          "pitfalls": 8,
+          "hygiene": 8,
+          "actionability": 8,
+          "safety": 8,
+          "concreteness": 7
+        },
+        "note": "A generalizes across pyflakes/flake8/ruff with a category triage table and captures exit codes, while B is narrowly pinned to pyflakes and a specific service.py example, lowering its altitude and reusability."
+      },
+      "M1": {
+        "A": {
+          "altitude": 6,
+          "reusability": 6,
+          "pitfalls": 8,
+          "hygiene": 8,
+          "actionability": 8,
+          "safety": 8,
+          "concreteness": 7
+        },
+        "B": {
+          "altitude": 8,
+          "reusability": 9,
+          "pitfalls": 9,
+          "hygiene": 9,
+          "actionability": 9,
+          "safety": 9,
+          "concreteness": 9
+        },
+        "note": "B generalizes across multiple linters with a category-based triage table and exit-code gating, while A is narrower (pyflakes-centric, hardcoded service.py) though still solid."
+      }
+    },
+    "npm": {
+      "H1": {
+        "note": "A is a genuine class-level diagnostic skill with ordered root causes and multi-ecosystem fixes, while B overfits to a single observed \"npm install fixes node\" pattern that ignores most real causes of module-not-found errors.",
+        "A": {
+          "altitude": 9,
+          "reusability": 9,
+          "pitfalls": 8,
+          "hygiene": 9,
+          "actionability": 9,
+          "safety": 8,
+          "concreteness": 8
+        },
+        "B": {
+          "altitude": 2,
+          "reusability": 3,
+          "pitfalls": 3,
+          "hygiene": 6,
+          "actionability": 5,
+          "safety": 5,
+          "concreteness": 3
+        }
+      },
+      "M1": {
+        "note": "A is a narrow, overfit recovery memo for a single toy \"node/cannot-find/npm install\" loop, while B is a genuine class-level diagnostic skill covering module-resolution failures across runtimes with ordered causes and ecosystem-specific fixes.",
+        "A": {
+          "altitude": 2,
+          "reusability": 2,
+          "pitfalls": 3,
+          "hygiene": 6,
+          "actionability": 5,
+          "safety": 6,
+          "concreteness": 3
+        },
+        "B": {
+          "altitude": 9,
+          "reusability": 9,
+          "pitfalls": 8,
+          "hygiene": 8,
+          "actionability": 9,
+          "safety": 8,
+          "concreteness": 9
+        }
+      }
+    }
+  }
+}

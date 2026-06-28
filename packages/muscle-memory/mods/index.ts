@@ -43,12 +43,53 @@ const SECRET_FLAG = /--(?:api[_-]?key|apikey|key|token|secret|password|passwd|au
 const SECRET_HEADER = /\b(?:authorization|cookie|x-api-key|api-key)\s*:\s*(?:"[^"]*"|'[^']*'|[^\s;&]+)/gi;
 const NUM = /\b\d+\b/g;
 
+/** Secret-scrub cascade shared by the fingerprint template and the opt-in worked-example redactor,
+ * so both honor the same credential-removal contract. */
+function scrubSecrets(t: string): string {
+  t = t.replace(/\b(?:bearer|token|apikey|api[_-]?key)\s+[^\s;&"']+/gi, "<cred> <redacted>");
+  t = t.replace(/([a-z][a-z0-9+.\-]*:\/\/)[^/\s:@]+(?::[^/\s@]+)?@/gi, "$1<cred>@");
+  t = t.replace(/\b((?:aws[_-]?)?(?:secret|password|passwd|token|api[_-]?key|access[_-]?key(?:[_-]?id)?|auth)[a-z0-9_]*)\s+(["']?)[^\s"';|&]{3,}\2/gi, "$1 <redacted>");
+  t = t.replace(/(^|\s)(--?user|-u)[=\s]+("?)[^\s"':;|&]+:[^\s"';|&]+\3/gi, "$1$2 <redacted>");
+  t = t.replace(/(^|\s)(--?(?:password|passwd|token|access[-_]?token|api[-_]?key))[=\s]+\S+/gi, "$1$2 <redacted>");
+  t = t.replace(/(^|\s)-p(?=\S)\S+/g, "$1-p <redacted>");
+  t = t.replace(/\b(?:AKIA|ASIA|AIza|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|xox[baprs]-|sk-[A-Za-z0-9]*-?|eyJ)[A-Za-z0-9_\-.]{6,}/g, "<id>");
+  t = t.replace(SECRET_ASSIGN, "<cred>=<redacted>");
+  t = t.replace(SECRET_QUERY, "$1<cred>=<redacted>");
+  t = t.replace(SECRET_FLAG, "--<cred>=<redacted>");
+  t = t.replace(SECRET_HEADER, "<cred>:<redacted>");
+  return t;
+}
+
+/** Opt-in worked-example redactor (MM_CAPTURE). Unlike commandTemplate it PRESERVES code/error
+ * structure (line numbers, operators, short identifiers, quotes) so a captured error/diff stays
+ * concrete, but still strips credentials, absolute paths, and long opaque tokens. The final skill
+ * body is independently re-scanned by scanSkillContent before any write (defense in depth). */
+export function redactFragment(text: unknown, maxLines = 8, maxChars = 320): string {
+  const lines = String(text ?? "").split(/\r?\n/).slice(0, maxLines).map((ln) => {
+    let s = scrubSecrets(ln);
+    s = s.replace(ABS_PATH, "<path>");
+    s = s.replace(/\b[A-Za-z0-9_\-]{28,}\b/g, "<id>");
+    s = s.replace(/\b[0-9a-f]{12,}\b/gi, "<id>");
+    return s.replace(/[ \t]+/g, " ").replace(/\s+$/, "");
+  });
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, maxChars);
+}
+
 export function commandTemplate(cmd: string): string {
   let t = String(cmd).trim();
   // Scrub the credential token that FOLLOWS a bearer/token keyword (e.g. "Bearer sk-...").
   // Runs FIRST: header/flag rules only consume the first word after the colon, which would
   // otherwise orphan the actual secret token. Catch "Bearer <token>" before anything eats "Bearer".
   t = t.replace(/\b(?:bearer|token|apikey|api[_-]?key)\s+[^\s;&"']+/gi, "<cred> <redacted>");
+  // v4 allow-list-leaning scrubs the deny-list misses (audit S1): URL userinfo, basic-auth user:pass,
+  // attached/spaced password+token flags, secret-named identifiers followed by a bare value
+  // (aws_secret_access_key AKIA…), and known opaque key prefixes regardless of length.
+  t = t.replace(/([a-z][a-z0-9+.\-]*:\/\/)[^/\s:@]+(?::[^/\s@]+)?@/gi, "$1<cred>@");
+  t = t.replace(/\b((?:aws[_-]?)?(?:secret|password|passwd|token|api[_-]?key|access[_-]?key(?:[_-]?id)?|auth)[a-z0-9_]*)\s+(["']?)[^\s"';|&]{3,}\2/gi, "$1 <redacted>");
+  t = t.replace(/(^|\s)(--?user|-u)[=\s]+("?)[^\s"':;|&]+:[^\s"';|&]+\3/gi, "$1$2 <redacted>");
+  t = t.replace(/(^|\s)(--?(?:password|passwd|token|access[-_]?token|api[-_]?key))[=\s]+\S+/gi, "$1$2 <redacted>");
+  t = t.replace(/(^|\s)-p(?=\S)\S+/g, "$1-p <redacted>");
+  t = t.replace(/\b(?:AKIA|ASIA|AIza|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|xox[baprs]-|sk-[A-Za-z0-9]*-?|eyJ)[A-Za-z0-9_\-.]{6,}/g, "<id>");
   // Scrub key=value / query / flag / header secret forms before generic cleanup so
   // short unquoted credential values do not leave partial fragments behind.
   t = t.replace(SECRET_ASSIGN, "<cred>=<redacted>");
@@ -120,7 +161,7 @@ function hash(s: string): string {
 // ── D2: DETECT (pure, deterministic — the testable core) ─────────────────────
 // v2 (0.27.18): rows carry an outcome (ok) + error class (err) + a call id so
 // tool_end outcomes can be merged onto tool_start observations.
-export type Row = { ts?: number; conv?: string | null; tool: string; fp: string; tmpl?: string | null; h?: string; ok?: boolean; err?: string | null; id?: string };
+export type Row = { ts?: number; conv?: string | null; tool: string; fp: string; tmpl?: string | null; h?: string; ok?: boolean; err?: string | null; id?: string; errMsg?: string | null; fix?: string | null };
 
 export type Candidate = {
   kind: "template" | "sequence";
@@ -240,16 +281,64 @@ function finalize(kind: "template" | "sequence", byKey: Map<string, { count: num
 // A single tool-call primitive (read a file, write a file, grep) is never a "skill".
 // Skills are multi-step workflows or distinctive command pipelines.
 const PRIMITIVE = /^(Read|Write|Edit|Glob|Grep|fast_apply|structural_search)\b/;
+// Shell noise: commands that are the universal texture of every session, never a skill on their own.
+const TRIVIAL_CMD = new Set(["echo", "cd", "ls", "cat", "true", "false", "pwd", "sleep", ":", "mkdir", "rmdir", "touch", "which", "whoami", "find", "head", "tail", "wc", "chmod", "chown", "cp", "mv", "rm", "export", "unset", "source", "clear", "env", "printenv", "date", "tree", "cut", "tr", "sort", "uniq", "basename", "dirname", "realpath", "test"]);
+// Bare interpreter/runtime invocation ("run it") — the universal step; only a skill with a real fix or distinctive verb.
+const BARE_RUN = /^(python3?|node|deno|bun|ruby|go|php|perl|java|dotnet|sh|bash|zsh)$|^\.\//i;
+/** First meaningful command verb of a bash template key (mirrors stepSig, for the gate). */
+function templateVerb(key: string): string {
+  for (const seg of key.split(/&&|\|\||\||;/)) {
+    const toks = seg.trim().split(/\s+/).filter(Boolean);
+    if (!toks.length) continue;
+    let v = toks[0].replace(/^.*\//, "");
+    if (TRIVIAL.has(v)) continue;
+    if (SUBCMD.has(v) && toks[1] && /^[a-z]/i.test(toks[1])) v = `${v} ${toks[1]}`;
+    return v;
+  }
+  return (key.split(/\s+/)[0] || key).replace(/^.*\//, "");
+}
+/** A step that carries a real procedural lesson: a domain command (git commit, docker build, make,
+ * cargo test, npm run…) — NOT a file primitive, a bare interpreter run, or shell noise. */
+function isDistinctiveStep(sig: string): boolean {
+  if (PRIMITIVE.test(sig)) return false;
+  if (BARE_RUN.test(sig)) return false;
+  const v = sig.split(/\s+/)[0].replace(/^.*\//, "");
+  if (TRIVIAL_CMD.has(v)) return false;
+  return /[a-z]/i.test(sig);
+}
 export function isSkillWorthy(c: Candidate): boolean {
   if (!c.mature) return false;
-  if (c.kind === "template" && PRIMITIVE.test(c.key)) return false; // primitive file-op, not a skill
+  if (c.kind === "template") {
+    if (PRIMITIVE.test(c.key)) return false;                // primitive file-op, not a skill
+    if (TRIVIAL_CMD.has(templateVerb(c.key))) return false; // shell noise (ls/cat/echo/mkdir…) — never a skill
+    return true;
+  }
+  // sequence: a fix-free chain of only primitives/bare-runs/noise is the universal edit→run loop, not a skill.
+  if (c.kind === "sequence" && c.fixes === 0 && !c.key.split(/→/).some((s) => isDistinctiveStep(s.trim()))) return false;
   return true;
+}
+
+/** A real recovery IS a high-value skill. In realistic varied work the same literal command rarely
+ * recurs, but the same repair SHAPE does — so mature repairs (incl. generalized cross-command classes)
+ * become first-class distill candidates, not just enrichment for a separately-maturing sequence. */
+function repairCandidates(rows: Row[]): Candidate[] {
+  const out: Candidate[] = [];
+  for (const r of detectRepairChains(rows)) {
+    // a real recovery is high-signal: mature at ≥2 reps/≥2 sessions, OR a generalized cross-command class, OR ≥3 reps.
+    const mature = (r.convs >= MM.MIN_CONVS && r.count >= 2) || (!!r.generalized && r.count >= 2) || r.count >= MM.MIN_COUNT;
+    if (!mature) continue;
+    out.push({ kind: "sequence", key: r.verifyStep, count: r.count, convs: r.convs, fixes: r.count, maturity: +maturityScore(r.count, r.convs, r.count).toFixed(2), mature: true });
+  }
+  return out;
 }
 
 export function detect(rows: Row[]): { templates: Candidate[]; sequences: Candidate[]; candidates: Candidate[] } {
   const templates = detectTemplates(rows);
   const sequences = detectSequences(rows);
-  const candidates = [...templates, ...sequences].filter(isSkillWorthy).sort((a, b) => b.maturity - a.maturity);
+  const repairs = repairCandidates(rows); // mature recoveries are first-class, highest-value candidates
+  const repairKeys = new Set(repairs.map((r) => r.key));
+  const rest = [...templates, ...sequences].filter((c) => !repairKeys.has(c.key)); // dedupe vs a literal sequence
+  const candidates = [...repairs, ...rest].filter(isSkillWorthy).sort((a, b) => b.maturity - a.maturity);
   return { templates, sequences, candidates };
 }
 
@@ -269,7 +358,7 @@ export function loadRows(path = LOG_PATH): Row[] {
 }
 
 // ── D3: DISTILL / GRADUATE / HOT-LOAD / REFINE (Hermes-style skill_manage) ────
-const GLOBAL_SKILLS = join(homedir(), ".letta", "skills");
+const GLOBAL_SKILLS = GLOBAL_SKILLS_DIR; // unified: respects MM_GLOBAL_SKILLS_DIR (was hardcoded — broke isolation + env override)
 const MM_TAG = "muscle-memory provenance"; // marker that tags a muscle-memory-managed skill
 
 /** Resolve the agent-scoped skills dir (compounds via MemFS); fall back to global. Portable. */
@@ -320,7 +409,7 @@ function candidateName(c: Candidate): string {
   // Drop tool/primitive words + the shell-script extension, and DEDUPE repeated tokens, so the
   // deterministic fallback name stays clean (e.g. "rename-photos.sh ~/Photos" → "rename-photos", not
   // "rename-photos-sh-photos-workflow"). Keep content tokens (md/py/json) — they carry meaning. 2026-06-27.
-  const STOP = new Set(["str", "path", "url", "read", "write", "edit", "bash", "sh"]);
+  const STOP = new Set(["str", "path", "url", "read", "write", "edit", "bash", "sh", "cd", "ls", "cat", "echo", "pwd", "true", "sleep", "mkdir", "amp"]);
   const seen = new Set<string>();
   const words = key.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w) && !seen.has(w) && seen.add(w));
   const base = words.slice(0, 5).join("-") || (c.kind === "sequence" ? "recurring-workflow" : "recurring-command");
@@ -353,7 +442,7 @@ function findCandidate(candidateKey?: string): Candidate | undefined {
 function repairForCandidate(c: Candidate): RepairChain | undefined {
   if (!c.fixes) return undefined;
   const first = c.key.split(/\s*→\s*/)[0];
-  return detectRepairChains(loadExperience()).find((r) => r.trigger === first || c.key.includes(r.trigger));
+  return detectRepairChains(loadExperience()).find((r) => r.trigger === first || r.verifyStep === first || c.key.includes(r.trigger) || c.key.includes(r.verifyStep));
 }
 
 function managedSkillUsage(name: string, rows: Row[] = loadRows()): number {
@@ -445,9 +534,9 @@ const RECEIPTS_DIR = join(STATE_DIR, "receipts");
 export function classifyError(resultText: unknown, ok?: boolean): string | null {
   if (ok !== false) return null;
   const raw = String(resultText ?? "");
-  const line = raw.split("\n").find((l) => /error|fail|cannot|not found|denied|refused|invalid|unexpected|exit code|ENOENT|EACCES|EPERM|timed out/i.test(l)) || raw.slice(0, 160);
-  const cls = commandTemplate(line); // reuse the secret-scrubbing template engine
-  return (cls || "error").slice(0, 120) || "error";
+  // Payload-free (audit S2): map to a stable known error-class token; NEVER echo arbitrary output.
+  const known = raw.match(/\b(?:ENOENT|EACCES|EPERM|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|command not found|no such file|not found|permission denied|denied|refused|unauthorized|forbidden|invalid|conflict|timed out|timeout|rate.?limit|exit code \d+|assertion|syntax error|type ?error|module not found|cannot find)\b/i);
+  return known ? known[0].toLowerCase().replace(/\s+/g, "-").slice(0, 40) : "error";
 }
 /** Merge tool_end outcomes onto tool_start rows by call id. Pure + testable. */
 export function mergeOutcomes(rows: Row[], ends: Array<{ id?: string; ok?: boolean; err?: string | null }>): Row[] {
@@ -455,7 +544,7 @@ export function mergeOutcomes(rows: Row[], ends: Array<{ id?: string; ok?: boole
   for (const e of ends) if (e.id) byId.set(e.id, { ok: e.ok, err: e.err ?? null });
   return rows.map((r) => (r.id && byId.has(r.id) ? { ...r, ...byId.get(r.id) } : r));
 }
-export type Outcome = { id?: string | null; ok?: boolean; err?: string | null; tool?: string | null; conv?: string | null; ts?: number };
+export type Outcome = { id?: string | null; ok?: boolean; err?: string | null; tool?: string | null; conv?: string | null; ts?: number; errMsg?: string | null };
 /** v2.1: correlate tool_end outcomes onto tool_start rows. Exact id when present; else
  * (conv + tool + nearest unmatched start within window); else FIFO oldest unmatched in conv;
  * else drop. Handles local backends that omit toolCallId on tool_start. Pure + testable. */
@@ -468,7 +557,7 @@ export function correlateOutcomes(starts: Row[], ends: Outcome[], opts: { window
   const pending: Outcome[] = [];
   for (const e of ends) {
     const eid = e.id != null ? String(e.id) : null;
-    if (eid && byId.has(eid) && !used.has(byId.get(eid)!)) { const i = byId.get(eid)!; rows[i].ok = e.ok; rows[i].err = e.err ?? null; used.add(i); }
+    if (eid && byId.has(eid) && !used.has(byId.get(eid)!)) { const i = byId.get(eid)!; rows[i].ok = e.ok; rows[i].err = e.err ?? null; rows[i].errMsg = e.errMsg ?? rows[i].errMsg ?? null; used.add(i); }
     else pending.push(e);
   }
   for (const e of [...pending].sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0))) {
@@ -482,7 +571,7 @@ export function correlateOutcomes(starts: Row[], ends: Outcome[], opts: { window
     } else {
       pick = cands.reduce((a, b) => (a.r.ts ?? 0) <= (b.r.ts ?? 0) ? a : b); // FIFO oldest unmatched
     }
-    rows[pick.i].ok = e.ok; rows[pick.i].err = e.err ?? null; used.add(pick.i);
+    rows[pick.i].ok = e.ok; rows[pick.i].err = e.err ?? null; rows[pick.i].errMsg = e.errMsg ?? rows[pick.i].errMsg ?? null; used.add(pick.i);
   }
   return rows;
 }
@@ -492,39 +581,149 @@ function loadOutcomes(): Outcome[] {
   for (const l of readFileSync(OUTCOME_PATH, "utf8").split("\n")) { if (!l) continue; try { out.push(JSON.parse(l)); } catch { /* skip */ } }
   return out;
 }
-/** v2.1 experience = starts correlated with their outcomes (id-exact + fallback). */
-export function loadExperience(): Row[] { return correlateOutcomes(loadRows(), loadOutcomes()); }
+// — A1.5: BEHAVIORAL OUTCOME INFERENCE — the real-agent unlock. Letta Code (0.27.18) emits NO
+// tool_end for Bash/Task (313 real Bash starts → 0 outcomes), so shell failures — where real coding
+// fails — are invisible to the whole failure-learning loop. The brain infers outcomes from action
+// SEQUENCES when explicit feedback is absent; so do we: a verify-command re-run after an intervening
+// fix-edit is a fail→fix→retry. Fills ONLY ok===undefined rows; never overrides a real tool_end. Pure.
+const VERIFY_RE = /\b(tests?|build|lint|tsc|type-?check|vitest|jest|pytest|mocha|check|compile|make|cargo|gradle|mvn|deploy|e2e|playwright|eslint|ruff|mypy|pyright|gate|qa|smoke|run|python3?|node|deno|ruby|go)\b|\.\/|\.(?:py|js|ts|tsx|sh|rb|go)\b/i;
+const FIX_TOOL_RE = /^(Edit|Write|fast_apply)/;
+export function inferOutcomes(rows: Row[], opts: { windowMs?: number } = {}): Row[] {
+  const windowMs = opts.windowMs ?? 10 * 60 * 1000;
+  const out = rows.map((r) => ({ ...r }));
+  const byConv = new Map<string, number[]>();
+  out.forEach((r, i) => { const c = String(r.conv ?? "?"); (byConv.get(c) ?? byConv.set(c, []).get(c)!).push(i); });
+  for (const [, idxs] of byConv) {
+    idxs.sort((a, b) => (out[a].ts ?? 0) - (out[b].ts ?? 0));
+    const occ = new Map<string, number[]>();
+    for (const i of idxs) {
+      const r = out[i];
+      if (r.ok !== undefined || (r.tool !== "Bash" && r.tool !== "exec_command")) continue;
+      if (!VERIFY_RE.test(String(r.tmpl ?? r.fp ?? ""))) continue;
+      (occ.get(stepSig(r)) ?? occ.set(stepSig(r), []).get(stepSig(r))!).push(i);
+    }
+    for (const [, list] of occ) {
+      for (let p = 0; p < list.length - 1; p++) {
+        const a = list[p], b = list[p + 1];
+        if ((out[b].ts ?? 0) - (out[a].ts ?? 0) > windowMs) continue;
+        const fixBetween = idxs.some((j) => (out[j].ts ?? 0) > (out[a].ts ?? 0) && (out[j].ts ?? 0) < (out[b].ts ?? 0) && FIX_TOOL_RE.test(out[j].tool));
+        const at = String(out[a].tmpl ?? ""), bt = String(out[b].tmpl ?? "");
+        const invocationRefined = at !== "" && bt !== "" && bt !== at && bt.includes(at); // re-ran SAME base + added flag/env → invocation/env gotcha (no edit)
+        if (!fixBetween && !invocationRefined) continue;
+        if (out[a].ok === undefined) { out[a].ok = false; out[a].err = out[a].err ?? "inferred-failure"; }
+        if (out[b].ok === undefined) out[b].ok = true;
+      }
+    }
+  }
+  return out;
+}
 
-// — A2. REPAIR CHAINS: FAIL(x) → EDIT/PATCH → PASS(x') within a conversation —
-export type RepairChain = { trigger: string; errClass: string; fixStep: string; verifyStep: string; count: number; convs: number };
-const FIX_VERBS = /^(Edit|Write|fast_apply|git commit|git add|patch|sed|npm|npx|bun|cargo)/i;
-export function detectRepairChains(rows: Row[]): RepairChain[] {
+// — A1.6: INVOCATION / ENV GOTCHAS — the class repair-chains miss (LongMemEval-V2 "environment
+// gotchas"). The SAME base command fails, then succeeds re-run with an added flag/env prefix; the
+// fix is the changed INVOCATION, not a code edit. Lesson: invoke it WITH the delta. Pure + testable.
+export type InvocationGotcha = { trigger: string; delta: string; count: number; convs: number };
+export function detectInvocationGotchas(rows: Row[]): InvocationGotcha[] {
   const byConv = new Map<string, Row[]>();
   for (const r of rows) { const c = String(r.conv ?? "?"); (byConv.get(c) ?? byConv.set(c, []).get(c)!).push(r); }
-  const acc = new Map<string, { errClass: string; count: number; convs: Set<string> }>();
+  const acc = new Map<string, { count: number; convs: Set<string> }>();
   for (const [conv, rs] of byConv) {
     rs.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
     for (let i = 0; i < rs.length; i++) {
-      if (rs[i].ok !== false) continue;            // a failure
-      const trigger = stepSig(rs[i]); const errClass = rs[i].err || classifyError("", false) || "error";
-      // look ahead up to 6 steps for a fix verb then a later success of the same trigger
-      let fixStep = ""; 
-      for (let j = i + 1; j < Math.min(rs.length, i + 7); j++) {
-        const sig = stepSig(rs[j]);
-        if (!fixStep && FIX_VERBS.test(sig)) fixStep = sig;
-        if (fixStep && rs[j].ok === true && stepSig(rs[j]) === trigger) {
-          const key = `${trigger}|${fixStep}`;
-          const e = acc.get(key) ?? { errClass, count: 0, convs: new Set<string>() };
+      if ((rs[i].tool !== "Bash" && rs[i].tool !== "exec_command") || !VERIFY_RE.test(String(rs[i].tmpl ?? rs[i].fp ?? ""))) continue; // a verify-ish shell command
+      const at = String(rs[i].tmpl ?? ""); if (!at) continue;
+      for (let j = i + 1; j < Math.min(rs.length, i + 6); j++) {
+        const bt = String(rs[j].tmpl ?? "");
+        if ((rs[j].tool === "Bash" || rs[j].tool === "exec_command") && bt && bt !== at && bt.includes(at)) { // re-ran the SAME base + a flag/env delta → gotcha
+          const delta = bt.replace(at, "").trim();
+          if (!/^(--?[a-z]|[A-Z][A-Z0-9_]*=)/.test(delta)) break; // the delta must be a flag/env (the gotcha class) — not appended script
+          const key = `${stepSig(rs[i])}|${delta}`;
+          const e = acc.get(key) ?? { count: 0, convs: new Set<string>() };
           e.count++; e.convs.add(conv); acc.set(key, e);
           break;
         }
       }
     }
   }
-  return [...acc.entries()].map(([k, e]) => { const [trigger, fixStep] = k.split("|"); return { trigger, errClass: e.errClass, fixStep, verifyStep: trigger, count: e.count, convs: e.convs.size }; })
-    .sort((a, b) => b.count - a.count);
+  return [...acc.entries()].map(([k, e]) => { const [trigger, delta] = k.split("|"); return { trigger, delta, count: e.count, convs: e.convs.size }; }).sort((a, b) => b.count - a.count);
 }
+/** v2.1 experience = starts correlated with outcomes (id-exact + fallback), then sequence-inferred
+ *  outcomes for tools Letta never reports (Bash/Task). The latter is what makes the loop work live. */
+export function loadExperience(): Row[] { return inferOutcomes(correlateOutcomes(loadRows(), loadOutcomes())); }
 
+// — A2. REPAIR CHAINS: FAIL(x) → EDIT/PATCH → PASS(x') within a conversation —
+export type RepairChain = { trigger: string; errClass: string; fixStep: string; verifyStep: string; count: number; convs: number; generalized?: boolean; examples?: string[]; worked?: Array<{ cmd: string; errMsg?: string; fix?: string }> };
+const FIX_VERBS = /^(Edit|Write|fast_apply|git commit|git add|patch|sed|npm|npx|bun|cargo)/i;
+// Generalize a repair trigger to a CLASS so the same recovery SHAPE learned from DIFFERENT commands or
+// languages compounds into ONE mature, general skill (the brain generalizing from instances) instead of
+// fragmenting into per-command pieces that never mature on realistic varied work. A distinctive command
+// returns null → keeps its literal identity (a recurring pytest-specific repair stays "pytest").
+function triggerClass(sig: string): { key: string; label: string } | null {
+  const v = sig.split(/\s+/)[0].replace(/^.*\//, "").toLowerCase();
+  if (/^(python3?|node|deno|bun|ruby|go|php|perl|java|dotnet)$/.test(v) || /\.(py|js|ts|tsx|rb|go|sh)$/.test(sig)) return { key: "script-run", label: "failing-script-runs" };
+  if (/^(pytest|jest|vitest|mocha|cargo|gradle|mvn|make|gotest|rspec|phpunit)$/.test(v)) return { key: "test-build", label: "failing-tests-or-builds" };
+  if (/^(tsc|mypy|pyright|eslint|ruff|prettier|biome|flake8)$/.test(v) || /type-?check/.test(v)) return { key: "typecheck-lint", label: "type-check-or-lint-failures" };
+  return null;
+}
+function fixClass(sig: string): string { return /^(Edit|Write|fast_apply)/.test(sig) ? "edit the source" : sig; }
+export function detectRepairChains(rows: Row[]): RepairChain[] {
+  const byConv = new Map<string, Row[]>();
+  for (const r of rows) { const c = String(r.conv ?? "?"); (byConv.get(c) ?? byConv.set(c, []).get(c)!).push(r); }
+  type Worked = { cmd: string; errMsg?: string; fix?: string };
+  const acc = new Map<string, { errClass: string; count: number; convs: Set<string>; worked: Worked[] }>();
+  for (const [conv, rs] of byConv) {
+    rs.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+    for (let i = 0; i < rs.length; i++) {
+      if (rs[i].ok !== false) continue;            // a failure
+      const trigger = stepSig(rs[i]); const errClass = rs[i].err || classifyError("", false) || "error";
+      // look ahead up to 6 steps for a fix verb then a later success of the same trigger
+      let fixStep = ""; let fixRow: Row | undefined;
+      for (let j = i + 1; j < Math.min(rs.length, i + 7); j++) {
+        const sig = stepSig(rs[j]);
+        if (!fixStep && FIX_VERBS.test(sig)) { fixStep = sig; fixRow = rs[j]; }
+        if (fixStep && rs[j].ok === true && stepSig(rs[j]) === trigger) {
+          const key = `${trigger}|${fixStep}`;
+          const e = acc.get(key) ?? { errClass, count: 0, convs: new Set<string>(), worked: [] };
+          e.count++; e.convs.add(conv);
+          // OPT-IN worked example (MM_CAPTURE): the real (redacted) error symptom + the real fix.
+          const errMsg = rs[i].errMsg || undefined; const fix = fixRow?.fix || undefined;
+          if (errMsg || fix) e.worked.push({ cmd: trigger, errMsg, fix });
+          acc.set(key, e);
+          break;
+        }
+      }
+    }
+  }
+  // Distinct symptom/fix pairs ARE the cross-session breadth — dedupe so identical loops don't repeat,
+  // but DIVERSE failures of the same class are preserved (the lever fingerprint-collapse used to erase).
+  const dedupeWorked = (ws: Worked[]): Worked[] => {
+    const seen = new Set<string>(); const out: Worked[] = [];
+    for (const w of ws) { const k = `${w.errMsg ?? ""}|${w.fix ?? ""}`; if (seen.has(k)) continue; seen.add(k); out.push(w); }
+    return out.slice(0, 5);
+  };
+  type Lit = { trigger: string; errClass: string; fixStep: string; count: number; convs: Set<string>; worked: Worked[] };
+  const literal: Lit[] = [...acc.entries()].map(([k, e]) => { const [trigger, fixStep] = k.split("|"); return { trigger, errClass: e.errClass, fixStep, count: e.count, convs: e.convs, worked: e.worked }; });
+  // CLASS GENERALIZATION: group same-shape recoveries (by trigger-class + fix-class). When ≥2 DISTINCT
+  // commands share the shape, emit ONE generalized repair (the cross-language lesson) and absorb the
+  // literals; otherwise keep the literal repair (preserving a specific recurring command's identity).
+  const groups = new Map<string, { label: string; lits: Lit[] }>();
+  for (const l of literal) {
+    const tc = triggerClass(l.trigger); if (!tc) continue;
+    const gk = `${tc.key}|${fixClass(l.fixStep)}`;
+    const g = groups.get(gk) ?? { label: tc.label, lits: [] }; g.lits.push(l); groups.set(gk, g);
+  }
+  const absorbed = new Set<string>(); const out: RepairChain[] = [];
+  for (const g of groups.values()) {
+    const distinct = new Set(g.lits.map((l) => l.trigger));
+    if (distinct.size < 2) continue; // generalize only when the shape recurred across ≥2 distinct commands
+    const convs = new Set<string>(); let count = 0; let errClass = ""; const worked: Worked[] = [];
+    for (const l of g.lits) { l.convs.forEach((c) => convs.add(c)); count += l.count; errClass ||= l.errClass; worked.push(...l.worked); absorbed.add(`${l.trigger}|${l.fixStep}`); }
+    const rep = g.lits.slice().sort((a, b) => b.count - a.count)[0]; // representative literal (re-runnable example)
+    const dw = dedupeWorked(worked);
+    out.push({ trigger: g.label, errClass, fixStep: fixClass(rep.fixStep), verifyStep: rep.trigger, count, convs: convs.size, generalized: true, examples: [...distinct], ...(dw.length ? { worked: dw } : {}) });
+  }
+  for (const l of literal) { if (absorbed.has(`${l.trigger}|${l.fixStep}`)) continue; const dw = dedupeWorked(l.worked); out.push({ trigger: l.trigger, errClass: l.errClass, fixStep: l.fixStep, verifyStep: l.trigger, count: l.count, convs: l.convs.size, ...(dw.length ? { worked: dw } : {}) }); }
+  return out.sort((a, b) => b.count - a.count);
+}
 // — A3. ANTI-PATTERNS: recurring FAILs that never recover → "don't do X" tombstones —
 export type AntiPattern = { step: string; errClass: string; fails: number; recovered: number; convs: number };
 export function detectAntiPatterns(rows: Row[]): AntiPattern[] {
@@ -584,17 +783,57 @@ export function effectivenessVerdict(input: { uses: number; ageDays: number; sta
   return { verdict: "keep", reason: `used ${input.uses}×` };
 }
 
-// — repair-aware draft: auto-embed observed error→fix as ## Pitfalls —
+// — repair-CENTERED draft: when a recurring observed failure→fix exists, the skill IS the recovery
+// procedure (the high-value "the agent learned how to fix X" case). Meaningful name + steps from the
+// real repair data — deterministic, useful, headless-safe (no model needed). Model authoring (reflect)
+// adds richer class-level skills on top; this guarantees the repair case always graduates something good.
+/** Render captured worked-examples (real, redacted) as a skill section. Empty when none captured. */
+function renderWorkedExamples(worked?: Array<{ cmd: string; errMsg?: string; fix?: string }>): string {
+  if (!worked || !worked.length) return "";
+  const items = worked.map((w) => {
+    const sym = w.errMsg ? `**symptom:** \`${w.errMsg.replace(/\s+/g, " ").slice(0, 180)}\`` : "**symptom:** (captured)";
+    const fix = w.fix ? `\n  \`\`\`diff\n${w.fix.split("\n").slice(0, 10).map((l) => "  " + l).join("\n")}\n  \`\`\`` : "";
+    return `- ${sym}${fix}`;
+  }).join("\n");
+  return `\n\n## Worked examples (real, redacted)\nReal symptom\u2192fix pairs captured across sessions (credentials/paths scrubbed):\n${items}\n`;
+}
+
+/** Build a compact redacted diff fragment from an Edit/Write tool's args (MM_CAPTURE=worked). */
+export function buildDiffFragment(args: Record<string, unknown>): string | undefined {
+  const oldS = typeof args?.old_string === "string" ? args.old_string : "";
+  const newS = typeof args?.new_string === "string" ? args.new_string : (typeof args?.content === "string" ? args.content : "");
+  if (!oldS && !newS) return undefined;
+  const o = redactFragment(oldS, 6, 200); const n = redactFragment(newS, 6, 200);
+  const lines: string[] = [];
+  for (const l of (o ? o.split("\n") : [])) lines.push(`- ${l}`);
+  for (const l of (n ? n.split("\n") : [])) lines.push(`+ ${l}`);
+  const out = lines.join("\n").slice(0, 400);
+  return out || undefined;
+}
+
 export function draftWithRepair(c: Candidate, repair?: RepairChain): { name: string; description: string; body: string } {
-  const base = draftSkillFromCandidate(c);
-  if (!repair) return base;
-  const pit = `\n## Pitfalls (observed)\n- **${repair.errClass}** — recovered ${repair.count}× via \`${repair.fixStep}\` then re-running \`${repair.verifyStep}\`. Expect this failure; apply the fix instead of guessing.\n`;
-  const body = base.body.replace(/\n## Verification/, `${pit}\n## Verification`);
-  return { ...base, body };
+  if (!repair) return draftSkillFromCandidate(c);
+  const workedMd = renderWorkedExamples(repair.worked);
+  const errTag = repair.errClass && repair.errClass !== "inferred-failure" ? repair.errClass : "";
+  const s = repair.convs === 1 ? "" : "s";
+  if (repair.generalized) {
+    // CROSS-LANGUAGE general lesson: same recovery shape across multiple commands → one reusable skill.
+    const name = slug(`recovering-from-${repair.trigger}`).slice(0, 64); // trigger = class label, e.g. "failing-script-runs"
+    const exs = (repair.examples?.length ? repair.examples : [repair.verifyStep]).slice(0, 4);
+    const exList = exs.map((e) => `\`${e}\``).join(", ");
+    const worked = exs.map((e) => `- \`${e}\` failed${errTag ? ` (\`${errTag}\`)` : ""} → edit the **source** to fix the cause → re-ran \`${e}\` → PASS`).join("\n");
+    const description = `Use when a test or script run fails (seen with ${exList}) — recover by editing the source and re-running the same command, never blind-retrying. Triggers on any fix-then-recheck loop, in any language.`;
+    const body = `# ${name}\n\nA recovery discipline distilled from ${repair.count} real fix-then-recheck loops across ${repair.convs} session${s} (${exList}). The command differs by language; the discipline does not.\n\n## When to use\n- A test/script run fails (assertion, traceback, or wrong output) and you need to recover.\n- You're about to re-run a failed command unchanged, hoping it passes.\n- Any edit→re-run loop, regardless of language.\n\n## Procedure (decision guide)\n1. Re-run the exact failing command and READ the concrete error — assertion, traceback, or a wrong printed value.\n2. Do NOT blind-retry. Edit the **source** (not the test) for that specific error — smallest change first.\n3. Re-run the SAME command; confirm it passes (exit 0).\n4. Run it once more to rule out a flaky / state-dependent pass.\n\n## Worked examples (observed)\n${worked}\n\n## Pitfalls (symptom → fix)\n- Re-running a failed command unchanged → it stays red; nothing passes until the source changes.\n- Exit code 0 but wrong output (e.g. \`go run\` prints the wrong value) → the failure is in stdout, not the exit code; assert on the value, not just the exit.\n- Editing the test to force a green → fix the code the test exercises, not the assertion.\n\n## Verification\n- [ ] The failure reproduced before the fix (you saw the real error).\n- [ ] The same command passes after the fix (exit 0).\n- [ ] A second independent run also passes.`;
+    return { name, description, body: body + workedMd };
+  }
+  const verb = slug(repair.verifyStep) || slug(c.key) || "a-recurring-check";
+  const name = slug(`recovering-from-${verb}-failures`).slice(0, 64);
+  const description = `Use when \`${repair.verifyStep}\` fails${errTag ? ` (\`${errTag}\`)` : ""} — recover by applying \`${repair.fixStep}\` then re-running \`${repair.verifyStep}\`, never blind-retrying. Observed ${repair.count}× across ${repair.convs} session${s}.`;
+  const body = `# ${name}\n\nA recovery discipline distilled from ${repair.count} real \`${repair.verifyStep}\` fix-then-recheck loop${repair.count === 1 ? "" : "s"} across ${repair.convs} session${s}. The fix is known — apply it instead of re-deriving.\n\n## When to use\n- \`${repair.verifyStep}\` fails${errTag ? ` with \`${errTag}\`` : ""}, or any check→fix→recheck loop on it.\n- You're about to re-run \`${repair.verifyStep}\` unchanged after it failed.\n\n## Procedure (decision guide)\n1. Run \`${repair.verifyStep}\` and read the concrete error${errTag ? ` (expect \`${errTag}\`)` : ""}.\n2. Do NOT blind-retry. Apply the known fix: \`${repair.fixStep}\` — addressing that specific error.\n3. Re-run \`${repair.verifyStep}\` to confirm it passes (exit 0).\n4. Run once more to rule out a flaky pass.\n\n## Worked example (observed)\n- \`${repair.verifyStep}\` failed${errTag ? ` (\`${errTag}\`)` : ""} → \`${repair.fixStep}\` → re-ran \`${repair.verifyStep}\` → PASS  (${repair.count}× / ${repair.convs} session${s})\n\n## Pitfalls (symptom → fix)\n- Re-running \`${repair.verifyStep}\` unchanged → stays red; it won't pass until \`${repair.fixStep}\` is applied.\n- Treating the first failure as noise → it's signal; the fix is known from ${repair.count} prior recoveries.\n\n## Verification\n- [ ] \`${repair.verifyStep}\` failed before the fix (real error seen).\n- [ ] \`${repair.verifyStep}\` passes after \`${repair.fixStep}\` (exit 0).\n- [ ] A second run also passes.`;
+  return { name, description, body: body + workedMd };
 }
 
 // — E. REGISTRY CATALOG (Hermes-like mini package registry) —
-const REGISTRY_PATH = join(STATE_DIR, "registry.json");
 export function buildRegistry(dirs: string[]): { generated: string; count: number; skills: Array<{ name: string; description: string; dir: string; provenance: string; state: string; pinned: boolean; uses: number; absorbedInto?: string }> } {
   const usage = loadUsage();
   const skills: Array<{ name: string; description: string; dir: string; provenance: string; state: string; pinned: boolean; uses: number; absorbedInto?: string }> = [];
@@ -615,7 +854,6 @@ export function curatorPass(managed: Array<{ name: string; lastActivityDaysAgo: 
   }
   return { transitions };
 }
-function writeRegistry(dirs: string[]) { try { ensureDir(); writeFileSync(REGISTRY_PATH, JSON.stringify(buildRegistry(dirs), null, 2)); } catch { /* best-effort */ } }
 
 // — my-add #5. SPEC-DRIFT: a managed skill whose referenced verbs no longer occur in experience —
 export function skillVerbs(body: string): string[] {
@@ -664,12 +902,298 @@ export function buildDefenses(rows: Row[]): Defense[] {
   const out: Defense[] = [];
   for (const r of detectRepairChains(rows)) out.push({ trigger: r.trigger, errClass: r.errClass, consequence: "fails until the known fix is applied", defense: `apply ${r.fixStep}, then re-run ${r.verifyStep}`, severity: Math.min(3, r.count + 1), count: r.count, kind: "fix" });
   for (const p of detectAntiPatterns(rows)) out.push({ trigger: p.step, errClass: p.errClass, consequence: "recurring failure with no known recovery", defense: "root-cause before retrying; do not blind-retry", severity: Math.min(3, p.fails), count: p.fails, kind: "avoid" });
+  for (const g of detectInvocationGotchas(rows)) out.push({ trigger: g.trigger, errClass: "invocation", consequence: "fails unless invoked with the right flag/env", defense: `invoke with \`${g.delta}\``, severity: Math.min(3, g.count + 1), count: g.count, kind: "fix" });
   return out.sort((a, b) => b.severity - a.severity);
 }
 /** PRE-ACTION check: Letta's tool_start is the hook Hermes lacks. Returns a matching defense or null. */
 export function preActionDefense(stepSignature: string, defenses: Defense[]): Defense | null {
   const s = stepSignature.toLowerCase();
   return defenses.find((d) => d.trigger.toLowerCase() === s) || defenses.find((d) => s.includes(d.trigger.toLowerCase()) && d.trigger.length > 3) || null;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// v5 ENGRAM — the Complementary-Learning-Systems loop (neuroscience-rooted).
+// Hippocampus = the experience trace (fast, episodic, decaying); neocortex = the
+// SKILL.md library (slow, gist, stable). The three governing dynamics no shipping
+// agent-memory system implements: prediction-error reconsolidation, synaptic
+// tagging & capture, reward-weighted prioritized replay. See muscle-memory.ENGRAM.md.
+//
+// E0: neuromodulatory SALIENCE + SYNAPTIC TAGGING & CAPTURE. Pure + deterministic,
+// computed OFF the hot path from the existing trace — never a model call, never a
+// write, never on tool_start. The testable core the rest of ENGRAM builds on.
+// ════════════════════════════════════════════════════════════════════════════
+export const ENGRAM = {
+  W_PE: 3.0,                            // prediction-error weight — dominant (reconsolidation's gate)
+  W_RW: 2.0,                            // reward weight (recovery / high-signal gate / win)
+  W_NOV: 1.0,                           // novelty weight (first sight of a fingerprint)
+  W_REC: 1.0,                           // recency weight (exponential decay)
+  TAG_HALFLIFE_MS: 6 * 60 * 60 * 1000,  // tag-strength half-life (~one working session)
+  CAPTURE_WINDOW_MS: 30 * 60 * 1000,    // behavioral-tagging window around a strong event (symmetric)
+  PRP_THRESHOLD: 3.0,                   // salience that "synthesizes PRPs" (a strong/novel/rewarded event)
+  WEAK_MAX: 1,                          // a fingerprint seen <= this is "weak" (would not consolidate alone)
+};
+
+export type Salience = { score: number; pe: number; rw: number; nov: number; rec: number };
+export type Tagged = Row & { sal: Salience };
+
+/** What consolidated memory PREDICTS for a step's outcome: avoid-defense ⇒ failure (false),
+ *  fix/known-good defense ⇒ success once the fix is applied (true), nothing ⇒ undefined (unmodeled). */
+export function expectationFor(sig: string, defenses: Defense[]): boolean | undefined {
+  const d = preActionDefense(sig, defenses);
+  if (!d) return undefined;
+  return d.kind === "avoid" ? false : true;
+}
+
+/** Prediction error for one row vs. what memory expected (0..1). A contradiction (expected
+ *  success → errored, or expected failure → succeeded) is full surprise; an unmodeled failure
+ *  is mild surprise; a confirmed expectation is none. This is the reconsolidation trigger. */
+export function predictionError(row: Row, defenses: Defense[]): number {
+  if (row.ok === undefined) return 0;                       // no outcome correlated → no signal
+  const exp = expectationFor(stepSig(row), defenses);
+  if (exp === undefined) return row.ok === false ? 0.4 : 0; // unmodeled failure = mild surprise
+  return exp !== row.ok ? 1 : 0;                            // contradiction = full prediction error
+}
+
+/** Tag every experience with a salience score (neuromodulatory gate). Sequence-aware: reward
+ *  fires on error-recovery (a step that previously failed now succeeds — the reverse-replay anchor)
+ *  or on passing a high-signal gate; novelty on first sight of a fingerprint; recency decays. Pure. */
+export function tagExperience(rows: Row[], opts: { defenses?: Defense[]; now?: number; highSignal?: Set<string> } = {}): Tagged[] {
+  const defenses = opts.defenses ?? [];
+  const now = opts.now ?? Date.now();
+  const highSignal = opts.highSignal ?? HIGH_SIGNAL_TOOL_SET;
+  const failedSig = new Map<string, Set<string>>();         // conv -> unrecovered failed step-sigs
+  const seen = new Map<string, number>();                   // fingerprint -> times seen so far (novelty)
+  const out: Tagged[] = [];
+  for (const r of [...rows].sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0))) {
+    const conv = String(r.conv ?? "?");
+    const sig = stepSig(r);
+    const h = String(r.h ?? r.fp ?? sig);
+    const nov = (seen.get(h) ?? 0) === 0 ? 1 : 0;
+    seen.set(h, (seen.get(h) ?? 0) + 1);
+    const pe = predictionError(r, defenses);
+    const fset = failedSig.get(conv) ?? failedSig.set(conv, new Set()).get(conv)!;
+    let rw = 0;
+    if (r.ok === false) fset.add(sig);
+    else if (r.ok === true) {
+      if (fset.has(sig)) { rw = 1; fset.delete(sig); }       // recovery — the rewarded outcome
+      else if (highSignal.has(r.tool)) rw = 1;               // passing a high-signal gate
+    }
+    const rec = Math.pow(0.5, Math.max(0, now - (r.ts ?? now)) / ENGRAM.TAG_HALFLIFE_MS);
+    const score = +(ENGRAM.W_PE * pe + ENGRAM.W_RW * rw + ENGRAM.W_NOV * nov + ENGRAM.W_REC * rec).toFixed(3);
+    out.push({ ...r, sal: { score, pe, rw, nov, rec: +rec.toFixed(3) } });
+  }
+  return out;
+}
+
+/** SYNAPTIC TAGGING & CAPTURE (behavioral tagging): a weak, sub-threshold trace within the capture
+ *  window of a high-salience "PRP" event is rescued for consolidation — the one-shot lesson that sat
+ *  next to what mattered. Symmetric in time (Frey/Morris). Returns rescued rows tagged with the ts of
+ *  the capturing event. Pure + testable; this is the false-negative fix frequency-thresholding causes. */
+export function captureTagged(tagged: Tagged[], opts: { window?: number; prpThreshold?: number; weakMax?: number } = {}): Array<Tagged & { capturedBy: number }> {
+  const window = opts.window ?? ENGRAM.CAPTURE_WINDOW_MS;
+  const prp = opts.prpThreshold ?? ENGRAM.PRP_THRESHOLD;
+  const weakMax = opts.weakMax ?? ENGRAM.WEAK_MAX;
+  const count = new Map<string, number>();
+  for (const t of tagged) { const h = String(t.h ?? t.fp ?? stepSig(t)); count.set(h, (count.get(h) ?? 0) + 1); }
+  const prpEvents = tagged.filter((t) => t.sal.score >= prp);
+  const rescued: Array<Tagged & { capturedBy: number }> = [];
+  for (const t of tagged) {
+    const h = String(t.h ?? t.fp ?? stepSig(t));
+    if ((count.get(h) ?? 0) > weakMax) continue;             // not weak — consolidates on its own
+    if (t.sal.score >= prp) continue;                        // already strong — not a rescue
+    const near = prpEvents.find((p) => p !== t && String(p.conv) === String(t.conv) && Math.abs((p.ts ?? 0) - (t.ts ?? 0)) <= window);
+    if (near) rescued.push({ ...t, capturedBy: near.ts ?? 0 });
+  }
+  return rescued;
+}
+
+// ── E1: PREDICTION-ERROR RECONSOLIDATION ─────────────────────────────────────
+// Retrieval (a managed skill's verbs appear in the live trace) + a prediction error
+// (a step it recommends fails, or a warning it encodes is contradicted) opens the
+// LABILE window: the skill is re-authored — corrected, weakened, or retired — NOT
+// appended-beside. The neural form of fake-green prevention (a claim that stops
+// earning its prediction gets rewritten). Pure; the sleep pass executes the rewrite.
+export type LabileSkill = { name: string; reason: string; pe: number; conflicts: string[] };
+
+/** A managed skill is "retrieved" when its referenced verbs occur in the experience trace. */
+export function skillRetrieved(verbs: string[], rows: Row[]): boolean {
+  if (!verbs.length) return false;
+  const vset = verbs.map((v) => v.toLowerCase());
+  return rows.some((r) => { const s = stepSig(r).toLowerCase(); return vset.some((v) => s === v || (v.length > 3 && s.includes(v))); });
+}
+
+/** Reconsolidation candidates: managed skills retrieved AND contradicted by outcomes (prediction
+ *  error ≥ 1). Each conflict names the step + how reality diverged from the skill's expectation. */
+export function labileSkills(skills: Array<{ name: string; body: string }>, rows: Row[], defenses: Defense[]): LabileSkill[] {
+  const tagged = tagExperience(rows, { defenses });
+  const out: LabileSkill[] = [];
+  for (const s of skills) {
+    const verbs = skillVerbs(s.body);
+    if (!verbs.length) continue;
+    const vset = verbs.map((v) => v.toLowerCase());
+    const used = tagged.filter((t) => { const sig = stepSig(t).toLowerCase(); return vset.some((v) => sig === v || (v.length > 3 && sig.includes(v))); });
+    if (!used.length) continue;                              // not retrieved → no reconsolidation
+    const hits = used.filter((t) => t.sal.pe >= 1);
+    if (!hits.length) continue;
+    const conflicts = [...new Set(hits.map((t) => `${stepSig(t)} ${t.ok === false ? "failed" : "succeeded-unexpectedly"} (${t.err || "ok"})`))].slice(0, 5);
+    out.push({ name: s.name, reason: `retrieved + ${hits.length} prediction-error(s) → labile (re-author, do not append)`, pe: Math.max(...hits.map((t) => t.sal.pe)), conflicts });
+  }
+  return out.sort((a, b) => b.pe - a.pe || b.conflicts.length - a.conflicts.length);
+}
+
+// ── E2: REWARD-WEIGHTED PRIORITIZED REPLAY ───────────────────────────────────
+// Sleep replay is not uniform. (a) replayQueue: salience-ranked triage. (b) reverseReplay:
+// from each rewarded terminal, walk back and assign decaying credit to the steps that led to
+// the win (credit assignment). (c) interleave: alternate novel hippocampal items with familiar
+// consolidated skills so consolidating the new never destabilizes the old (Golden 2025). Pure.
+export type ReplayItem = Tagged & { credit: number };
+
+/** Salience-ranked replay queue (memory triage): the top-K experiences worth consolidating now. */
+export function replayQueue(tagged: Tagged[], k = 12): Tagged[] {
+  return [...tagged].sort((a, b) => b.sal.score - a.sal.score || (b.ts ?? 0) - (a.ts ?? 0)).slice(0, k);
+}
+
+/** Reverse replay: credit-assign backwards from each rewarded terminal outcome within its conversation. */
+export function reverseReplay(tagged: Tagged[], opts: { lookback?: number; decay?: number } = {}): ReplayItem[] {
+  const lookback = opts.lookback ?? 6;
+  const decay = opts.decay ?? 0.7;
+  const byConv = new Map<string, Tagged[]>();
+  for (const t of tagged) { const c = String(t.conv ?? "?"); (byConv.get(c) ?? byConv.set(c, []).get(c)!).push(t); }
+  const credit = new Map<Tagged, number>();
+  for (const [, rs] of byConv) {
+    rs.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+    rs.forEach((t, i) => {
+      if (t.sal.rw > 0) for (let j = 0; j <= lookback && i - j >= 0; j++) { const step = rs[i - j]; credit.set(step, (credit.get(step) ?? 0) + Math.pow(decay, j)); }
+    });
+  }
+  return [...credit.entries()].map(([t, c]) => ({ ...t, credit: +c.toFixed(3) })).sort((a, b) => b.credit - a.credit);
+}
+
+/** Interleave novel (hippocampal) items with familiar (consolidated) ones — anti-catastrophic-forgetting. */
+export function interleave<A, B>(novel: A[], familiar: B[]): Array<A | B> {
+  const out: Array<A | B> = [];
+  const n = Math.max(novel.length, familiar.length);
+  for (let i = 0; i < n; i++) { if (i < novel.length) out.push(novel[i]); if (i < familiar.length) out.push(familiar[i]); }
+  return out;
+}
+
+// ── E2.5: CONSOLIDATION PLAN — the unified sleep "dream" ──────────────────────
+// Pure: composes salience tagging + prioritized/reverse replay + synaptic capture +
+// reconsolidation (labile skills) into ONE structured plan the sleep pass executes and
+// the panel/command renders. The digest REPLACES the uniform recent-history scan that
+// every other system feeds its reflector — this is the prioritized, interleaved brief.
+export type EngramPlan = {
+  hippoSize: number;                                  // experiences in the fast (hippocampal) store
+  tagged: number;                                     // experiences considered
+  replay: Tagged[];                                   // salience-ranked top-K worth consolidating now
+  rescued: Array<Tagged & { capturedBy: number }>;    // weak one-shots rescued by synaptic capture
+  credited: ReplayItem[];                             // reverse-replay credit-assigned steps
+  labile: LabileSkill[];                              // managed skills to RE-AUTHOR (reconsolidation)
+  digest: string;                                     // the consolidation brief (LLM/human readable)
+};
+
+/** Render the prioritized, interleaved consolidation brief that feeds the Reflector. Pure. */
+export function renderEngramDigest(p: { replay: Tagged[]; rescued: Array<Tagged & { capturedBy: number }>; credited: ReplayItem[]; labile: LabileSkill[] }): string {
+  const lines: string[] = ["# ENGRAM consolidation brief (prioritized replay, not recent-history)"];
+  if (p.credited.length) {
+    lines.push("\n## Rewarded paths (reverse-replay credit — steps that led to a win)");
+    for (const c of p.credited.slice(0, 8)) lines.push(`- ${stepSig(c)} [credit ${c.credit}${c.ok === false ? " · was-a-failed-step" : ""}]`);
+  }
+  if (p.replay.length) {
+    lines.push("\n## Highest-salience experiences");
+    for (const t of p.replay.slice(0, 8)) lines.push(`- ${stepSig(t)} [sal ${t.sal.score} · pe ${t.sal.pe} · rw ${t.sal.rw} · nov ${t.sal.nov}]${t.err ? ` (${t.err})` : ""}`);
+  }
+  if (p.rescued.length) {
+    lines.push("\n## Rescued one-shots (synaptic capture — rare, but sat next to what mattered)");
+    for (const t of p.rescued.slice(0, 6)) lines.push(`- ${stepSig(t)}`);
+  }
+  if (p.labile.length) {
+    lines.push("\n## Labile skills (RECONSOLIDATE — correct/weaken the contradicted claim; PRESERVE the proven core + frontmatter; never append a duplicate. Retire only if every prediction fails)");
+    for (const l of p.labile.slice(0, 6)) lines.push(`- ${l.name}: ${l.reason}\n    conflicts: ${l.conflicts.join("; ")}`);
+  }
+  if (lines.length === 1) lines.push("(nothing salient to consolidate this cycle)");
+  return lines.join("\n");
+}
+
+/** Build the full consolidation plan from the experience trace + managed skills. Pure + testable. */
+export function engramConsolidate(rows: Row[], skills: Array<{ name: string; body: string }>, opts: { defenses?: Defense[]; now?: number; k?: number; highSignal?: Set<string> } = {}): EngramPlan {
+  const defenses = opts.defenses ?? buildDefenses(rows);
+  const tagged = tagExperience(rows, { defenses, now: opts.now, highSignal: opts.highSignal });
+  const replay = replayQueue(tagged, opts.k ?? 12);
+  const rescued = captureTagged(tagged);
+  const credited = reverseReplay(tagged);
+  const labile = labileSkills(skills, rows, defenses);
+  return { hippoSize: rows.length, tagged: tagged.length, replay, rescued, credited, labile, digest: renderEngramDigest({ replay, rescued, credited, labile }) };
+}
+
+// ── E3: ENFORCED DEFENSE (permissions overlay) — the reconsolidated anti-pattern as PREVENTION ──
+// A high-severity AVOID defense (a recurring failure with no known recovery) becomes a real
+// deny/ask decision BEFORE the tool runs — not an advisory note. Letta's permissions.register
+// is the hook Hermes/ACE lack. Gated by MM_GUARD=off|ask|deny (default off — safe-first). Pure
+// decision fn so the policy is unit-tested without the live permission bus.
+export type GuardMode = "off" | "ask" | "deny";
+export function guardDecision(toolName: string, args: Record<string, unknown>, defenses: Defense[], mode: GuardMode): { decision: "ask" | "deny"; reason: string } | null {
+  if (mode === "off") return null;
+  const { fp, tmpl } = fingerprint(toolName, args ?? {});
+  const hit = preActionDefense(stepSig({ tool: toolName, fp, tmpl }), defenses);
+  if (!hit || hit.kind !== "avoid" || hit.severity < 2) return null; // only ENFORCE proven, unrecovered failures; fixes stay advisory
+  return { decision: mode, reason: `muscle-memory: "${hit.trigger}" → ${hit.errClass} recurred ${hit.count}× with no recovery. ${hit.defense}` };
+}
+
+// ── E3.5: NATIVE NEOCORTEX BRIDGE (opt-in) — exploit Letta's core memory + archival ───────────
+// CLS made literal: project the consolidated skill index into a Letta CORE MEMORY BLOCK so the
+// agent SEES its neocortex in-context every turn (no retrieval), and (optionally) write salient
+// lessons as ARCHIVAL PASSAGES for semantic recall. The string builders are pure + tested; the
+// live SDK writes (syncNeocortexBlock/archivePassage) are best-effort + opt-in (MM_NATIVE), never
+// throw, and no-op without a client+agentId. SDK shapes grounded against @letta-ai/letta-client.
+export const NEOCORTEX_BLOCK = "muscle_memory";
+
+/** Render the consolidated-skills index for a core-memory block (char-bounded, head preserved). Pure. */
+export function buildNeocortexBlock(managed: Array<{ name: string; description: string }>, opts: { limit?: number } = {}): string {
+  const limit = opts.limit ?? 4000;
+  const head = `# muscle-memory · consolidated skills (neocortex)\n# ${managed.length} learned skill(s); invoke by name with the Skill tool.\n`;
+  const lines = managed.map((m) => `- ${m.name}: ${String(m.description).replace(/\s+/g, " ").slice(0, 140)}`);
+  let body = head + lines.join("\n");
+  if (body.length > limit) {
+    const keep: string[] = [];
+    let len = head.length;
+    for (const l of lines) { if (len + l.length + 1 > limit) break; keep.push(l); len += l.length + 1; }
+    body = `${head}${keep.join("\n")}\n- …(+${lines.length - keep.length} more)`;
+  }
+  return body;
+}
+
+/** True when MM_NATIVE opts into the given native channel ("blocks"|"passages"). */
+export function nativeEnabled(channel: string): boolean {
+  return (process.env.MM_NATIVE ?? "").split(/[,\s]+/).filter(Boolean).includes(channel);
+}
+
+// Walk a nested path on an unknown SDK client with typeof narrowing — no fabricated object shape,
+// no inline cast-to-read. Returns the verified callable at the end of the path, or null.
+function reachFn(root: unknown, path: readonly string[]): ((...args: unknown[]) => unknown) | null {
+  let cur: unknown = root;
+  for (const key of path) {
+    if (!cur || typeof cur !== "object") return null;
+    cur = Reflect.get(cur, key); // unknown-assignable; no shape assertion
+  }
+  // A verified function whose call signature can't be runtime-checked → narrow cast at the boundary.
+  return typeof cur === "function" ? (cur as (...args: unknown[]) => unknown) : null;
+}
+
+/** Best-effort: upsert the neocortex index into the agent's core memory block. Opt-in (MM_NATIVE has "blocks"). Never throws. */
+export async function syncNeocortexBlock(client: unknown, agentId: string | null | undefined, content: string): Promise<boolean> {
+  if (!agentId || !nativeEnabled("blocks")) return false;
+  const update = reachFn(client, ["agents", "blocks", "update"]); // client.agents.blocks.update(label, params)
+  if (!update) return false;
+  try { await update(NEOCORTEX_BLOCK, { agent_id: agentId, value: content }); return true; } catch { return false; }
+}
+
+/** Best-effort: store a salient consolidated lesson as an archival passage. Opt-in (MM_NATIVE has "passages"). Never throws. */
+export async function archivePassage(client: unknown, agentId: string | null | undefined, text: string, tags: string[] = ["muscle-memory"]): Promise<boolean> {
+  if (!agentId || !nativeEnabled("passages") || !text.trim()) return false;
+  const create = reachFn(client, ["agents", "passages", "create"]); // client.agents.passages.create(agentId, body)
+  if (!create) return false;
+  try { await create(agentId, { text, tags }); return true; } catch { return false; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -776,7 +1300,7 @@ export type AutopilotPlan = { decisions: AutopilotDecision[]; skipped: Array<{ w
 function repairForRows(c: Candidate, rows: Row[]): RepairChain | undefined {
   if (!c.fixes) return undefined;
   const first = c.key.split(/\s*→\s*/)[0];
-  return detectRepairChains(rows).find((r) => r.trigger === first || c.key.includes(r.trigger));
+  return detectRepairChains(rows).find((r) => r.trigger === first || r.verifyStep === first || c.key.includes(r.trigger) || c.key.includes(r.verifyStep));
 }
 
 /** PURE decision engine: what should the autopilot do right now? Fully testable. */
@@ -818,6 +1342,7 @@ export function autopilotPlan(input: { rows: Row[]; managed: ManagedView[]; dirs
     const verified = c.fixes > 0 || c.count >= MM.STRONG_SINGLE;
     const gate: "graduate" | "stage" = cfg.mode === "auto" && verified ? "graduate" : "stage";
     decisions.push({ op: "distill", candidate: c, name: nm, reason: `impact ${imp}, ${c.count} reps${verified ? ", verified" : ""}`, gate });
+    existing.add(nm); // dedup: same repair surfaced as both a template + a sequence won't double-distill this pass
     used++;
   }
 
@@ -908,6 +1433,18 @@ export function streamChunkText(c: any): string {
   return "";
 }
 
+/** Consume a model-fork stream but NEVER hang: resolve with whatever accumulated after a hard timeout.
+ * The freeze guard — an unbounded `for await` on a stalled stream is what froze the panel on
+ * "writing skill…" for an hour. Bounded by MM_FORK_TIMEOUT_MS (default 60s). The dangling reader is
+ * parked harmlessly; the caller always proceeds to a terminal UI state. */
+async function consumeStreamBounded(stream: AsyncIterable<unknown>): Promise<string> {
+  const ms = Number(process.env.MM_FORK_TIMEOUT_MS) || 60_000;
+  let out = "";
+  const reader = (async () => { try { for await (const c of stream) out += streamChunkText(c); } catch { /* */ } return out; })();
+  const timer = new Promise<string>((resolve) => setTimeout(() => resolve(out), ms));
+  return Promise.race([reader, timer]);
+}
+
 /** Optional model-fork author: the model writes a richer SKILL.md body in a hidden conversation.
  * Fully guarded — ANY failure returns null and the executor falls back to the deterministic drafter,
  * so the autopilot loop can never break. (Live-only path; the deterministic fallback is what's unit-tested.) */
@@ -918,8 +1455,7 @@ async function forkAuthor(ctx: any, c: Candidate, repair?: RepairChain): Promise
     const prompt = `You are muscle-memory's skill author. Write ONLY the markdown BODY (no YAML frontmatter) of a SKILL.md capturing this recurring real workflow. Keep it under 120 lines. Required sections in order: "## Trigger", "## Observed pattern" (include the exact pattern in a code block), "## Procedure" (numbered, concrete, adaptable), ${repair ? `"## Pitfalls" (the observed error "${repair.errClass}" and its fix "${repair.fixStep}"), ` : ""}"## Verification". Pattern: ${c.key}. Reps: ${c.count} across ${c.convs} conversation(s). Output ONLY the markdown body, nothing else.`;
     const forked = await ctx.conversation.fork({ hidden: true });
     const stream = await forked.sendMessageStream([{ role: "user", content: prompt }]);
-    let body = "";
-    for await (const chunk of stream as AsyncIterable<any>) body += streamChunkText(chunk);
+    let body = await consumeStreamBounded(stream as AsyncIterable<unknown>);
     body = body.trim().replace(/^```(?:markdown|md)?\n?|\n?```$/g, "");
     if (body.length < 80 || !/##\s*Procedure/i.test(body) || !/##\s*Verification/i.test(body)) return null; // malformed → fallback
     const lint = lintSkillDraft({ name: det.name, description: det.description, body }, { needsPitfalls: !!c.fixes });
@@ -938,13 +1474,37 @@ export async function runAutopilot(ctx: any, config?: AutopilotConfig): Promise<
   const st = loadAutopilotState();
   const plan = autopilotPlan({ rows, managed: managedView(dirs), dirsForDedup: dirs, config: cfg, budgetUsedToday: st.used });
   if (cfg.mode === "off" || !plan.decisions.length) return plan;
-  // Best-effort: let the model author richer bodies via a hidden fork; deterministic drafter is the fallback.
-  const authored = new Map<string, { name: string; description: string; body: string }>();
-  for (const d of plan.decisions) if (d.op === "distill") { const a = await forkAuthor(ctx, d.candidate, repairForRows(d.candidate, rows)); if (a) authored.set(d.candidate.key, a); }
-  const author = (c: Candidate, r?: RepairChain) => authored.get(c.key) || draftWithRepair(c, r);
-  const result = executeAutopilotPlan(plan, { skillsDir: agentSkillsDir(ctx), rows, ctx, author });
+  // DETERMINISTIC authoring — synchronous, headless-safe: never blocks/hangs on a model fork, so the
+  // skill ALWAYS ships even if the process exits right after conversation_close (the live-flow bug this
+  // fixes: awaiting per-decision forks meant headless `-p` exited before anything was written). Richer
+  // model-authored class-level skills are the REFLECTIVE-REVIEW path (MM_REFLECT); autopilot stays fast.
+  const result = executeAutopilotPlan(plan, { skillsDir: agentSkillsDir(ctx), rows, ctx });
   saveAutopilotState({ date: st.date, used: st.used + result.graduated.length + result.staged.length });
-  try { ensureDir(); mkdirSync(RECEIPTS_DIR, { recursive: true }); writeFileSync(join(RECEIPTS_DIR, `autopilot-${Date.now()}.json`), JSON.stringify({ mode: cfg.mode, modelAuthored: authored.size, ...result, ts: Date.now() }, null, 2)); } catch { /* */ }
+  // Mirror autopilot activity to the LIVE PANEL — the always-on path (fires even with MM_REFLECT=off).
+  // This is the showcase moment: the agent watches itself distill a skill, with no user command.
+  if (result.graduated.length || result.staged.length) {
+    const g = result.graduated[0], s = result.staged[0];
+    const summary = g
+      ? `graduated '${g}'${result.graduated.length > 1 ? ` +${result.graduated.length - 1}` : ""}`
+      : `staged '${s}'${result.staged.length > 1 ? ` +${result.staged.length - 1}` : ""} for review`;
+    appendUiEvent({ phase: g ? "skill_graduated" : "skill_staged", summary, skill: g || s, action: g ? "graduate" : "stage", route: "autopilot" });
+    writeUiState({ phase: "done", last: summary, route: `AUTOPILOT · ${g ? "graduate" : "stage"}` });
+    for (const n of result.graduated) appendMeshFeed({ type: "skill_graduated", skill: n, route: "AUTOPILOT", signals: 0 });
+  }
+  // OPT-IN promotion (MM_PUBLISH=auto): copy freshly-graduated skills to the shared shelf
+  // (~/.letta/skills) so they appear under the app's Custom Skills, reusable for ALL agents.
+  // Default off — graduate is agent-scoped; publishing to the global catalog is a deliberate step.
+  // Best-effort + privacy/lint-gated inside publishSkillToCatalog: a block never breaks the loop.
+  const published: string[] = [];
+  if (process.env.MM_PUBLISH === "auto" && result.graduated.length) {
+    for (const n of result.graduated) { try { publishSkillToCatalog(n, ctx); published.push(n); } catch { /* privacy/lint gate or no-op — skip */ } }
+    if (published.length) {
+      appendUiEvent({ phase: "skill_published", summary: `published ${published.length} to catalog (Custom Skills)`, skill: published[0], action: "publish", route: "autopilot" });
+      writeUiState({ phase: "done", last: `published '${published[0]}' to catalog`, route: "AUTOPILOT · publish" });
+      for (const n of published) appendMeshFeed({ type: "skill_published", skill: n, route: "CATALOG", signals: 0 });
+    }
+  }
+  try { ensureDir(); mkdirSync(RECEIPTS_DIR, { recursive: true }); writeFileSync(join(RECEIPTS_DIR, `autopilot-${Date.now()}.json`), JSON.stringify({ mode: cfg.mode, ...result, published, ts: Date.now() }, null, 2)); } catch { /* */ }
   return { ...plan, result };
 }
 
@@ -998,7 +1558,14 @@ export function buildCrossConversationEvidence(rows: Row[]): { digest: string; c
   const topTmpl = [...tmpl.entries()].filter(([t, c]) => c >= 3 && !PRIMITIVE.test(t)).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const high = [...highSignal.entries()].sort((a, b) => b[1].failures - a[1].failures || b[1].count - a[1].count).slice(0, 10);
   const L: string[] = [`CROSS-CONVERSATION EVIDENCE (aggregated over ${convs} sessions of real tool-use):`];
-  for (const r of repairs.slice(0, 12)) L.push(`- recovered failure: "${r.trigger}" failed (${r.errClass}) → fixed via "${r.fixStep}" → re-ran "${r.verifyStep}" [${r.count}× across ${r.convs} sessions]`);
+  for (const r of repairs.slice(0, 12)) {
+    L.push(`- recovered failure: "${r.trigger}" failed (${r.errClass}) → fixed via "${r.fixStep}" → re-ran "${r.verifyStep}" [${r.count}× across ${r.convs} sessions]`);
+    for (const w of (r.worked ?? [])) {
+      const sym = w.errMsg ? ` symptom: ${w.errMsg.replace(/\s+/g, " ").slice(0, 160)}` : "";
+      const fx = w.fix ? ` | fix: ${w.fix.replace(/\s+/g, " ").slice(0, 200)}` : "";
+      if (sym || fx) L.push(`    · example —${sym}${fx}`);
+    }
+  }
   for (const p of aps.slice(0, 8)) L.push(`- recurring failure (no clean fix yet): "${p.step}" — ${p.errClass} [${p.fails}×]`);
   for (const [t, c] of topTmpl) L.push(`- recurring workflow: ${t} [${c}×]`);
   for (const [t, e] of high) L.push(`- high-signal receipt workflow: ${t} [${e.count}× across ${e.convs.size} session${e.convs.size === 1 ? "" : "s"}${e.failures ? `, ${e.failures} failed/partial receipt${e.failures === 1 ? "" : "s"}` : ""}]`);
@@ -1017,6 +1584,7 @@ HARD RULES:
 - SAFE FIRST: ALWAYS make a non-destructive safety net (a backup branch/tag, a stash, or a copy) the EXPLICIT first step before any destructive/irreversible command (reset --hard, force-push, rm, drop, db migrate) — and name it as the safety net so a wrong move is recoverable.
 - NAMING: class-level only; never an x-to-y transition, error string, PR number, date, codename, or fix-/debug-/audit-today artifact.
 - NEGATIVE FILTER: never capture environment-dependent failures (command-not-found, missing binaries, uninstalled packages, creds) or tool-negatives ("X is broken").
+- WORKED EXAMPLES: the evidence may include real, cross-session symptom→fix examples. GENERALIZE them into ONE high-altitude, reusable class-level discipline (a decision guide that transfers across languages/projects), and cite each real example as a brief concrete illustration (symptom → exact fix) under the matching step or pitfall — never a flat per-bug catalog. For EACH example add a one-line diagnostic TELL (the at-a-glance signal that identifies that failure class). Beyond the observed examples, also cover the 2-3 most common ADJACENT failure modes for this class (e.g. order/state-dependence, import/path errors, masked cascading failures) so the skill is broad. Include a safe-first step (inspect/diff before editing; change source not tests; smallest reversible edit). This cross-session breadth is the edge — use it, but keep the discipline general. Still emit the required frontmatter: a CLASS-level name (a noun phrase like debugging-failing-tests; obey the NAMING rule) and a description that STARTS WITH "Use when".
 Output ONLY the complete SKILL.md (no preamble, not truncated), or exactly "NOTHING-TO-SAVE".`;
 
 /** ★ THE MEMFS LEVER: reliable in-mod KEYWORD search over existing skills (no QMD dependency —
@@ -1062,14 +1630,78 @@ export function pickUpdateTarget<T extends { name: string; score: number; matche
   return null;
 }
 
+// ── COMPOUNDS-TRULY safety layer (from Kev's preserve-update lane): an update must never destroy a
+// proven skill's core, and ambiguous overlap must refuse autonomous create (anti-bloat). ──
+export function isAmbiguousExistingRoute<T extends { name: string; score: number; matched: number }>(matches: T[], threshold = 18): boolean {
+  const top = matches[0], second = matches[1];
+  if (!top || !second) return false;
+  if (pickUpdateTarget(matches, threshold)) return false; // a safe update target exists → not ambiguous
+  const topStrong = top.score >= threshold && top.matched >= SEARCH_DISTINCT_MIN;
+  // Ambiguous = runner-up has MORE distinctive name/desc overlap than the top (cross-cutting territory,
+  // e.g. ledger vs package-validation) — refuse to spawn a sibling that half-overlaps two proven skills.
+  const secondStrong = second.score >= Math.max(threshold, top.score * 0.65) && second.matched > top.matched;
+  return topStrong && secondStrong;
+}
+function frontmatterOf(content: string): string {
+  return (String(content || "").match(/^---\n([\s\S]*?)\n---\s*/)?.[1] || "").trimEnd();
+}
+function metadataBlockFromFrontmatter(fm: string): string {
+  const lines = fm.split("\n");
+  const start = lines.findIndex((l) => /^metadata\s*:/i.test(l.trim()));
+  if (start < 0) return "";
+  const out = [lines[start]];
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^[A-Za-z0-9_-]+\s*:/.test(line) && !/^\s/.test(line)) break; // next top-level key ends the block
+    out.push(line);
+  }
+  return out.join("\n").trimEnd();
+}
+/** Carry the old skill's frontmatter `metadata:` block into a rewritten skill so an UPDATE never
+ * silently drops proven provenance/metadata the author forgot to re-emit. */
+export function preserveExistingFrontmatterMetadata(newContent: string, oldContent?: string): string {
+  if (!oldContent) return newContent;
+  const oldMeta = metadataBlockFromFrontmatter(frontmatterOf(oldContent));
+  if (!oldMeta || /^---\n[\s\S]*?\nmetadata\s*:/im.test(newContent)) return newContent; // already has one
+  return newContent.replace(/^---\n([\s\S]*?)\n---\s*/m, (_m, fm) => `---\n${String(fm).trimEnd()}\n${oldMeta}\n---\n\n`);
+}
+export function skillSectionNames(content: string): string[] {
+  const out: string[] = [];
+  const text = String(content || "").replace(/```[\s\S]*?```/g, ""); // ignore fenced code
+  for (const m of text.matchAll(/^##\s+(.+?)\s*$/gim)) {
+    const section = m[1].trim().replace(/[`*_]/g, "").toLowerCase();
+    if (section && !out.includes(section)) out.push(section);
+  }
+  return out;
+}
+/** Section-level diff between an old and rewritten skill — surfaces what an UPDATE dropped/kept/added
+ * so destructive rewrites are reviewable beyond a hash change. */
+export function compareSkillSections(oldContent?: string, newContent?: string) {
+  const oldSections = skillSectionNames(oldContent || "");
+  const newSections = skillSectionNames(newContent || "");
+  const preservedSections = oldSections.filter((s) => newSections.includes(s));
+  const droppedSections = oldSections.filter((s) => !newSections.includes(s));
+  const addedSections = newSections.filter((s) => !oldSections.includes(s));
+  return { oldSections, newSections, preservedSections, droppedSections, addedSections };
+}
+
 export type ReviewResult = { action: "create" | "update" | "none" | "reject"; name?: string; description?: string; body?: string; content?: string; reason?: string; updateTarget?: string; matches?: Array<{ name: string; score: number; matched: number }> };
 /** Author + gate a skill from evidence, with MemFS update-first routing. authorFn(system,user)->text injectable. */
 export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn: (sys: string, user: string) => Promise<string>, opts: { updateThreshold?: number } = {}): Promise<ReviewResult> {
   // MemFS update-first: does a skill SAFELY cover this domain? (distinctive overlap + dominance, not generic words)
   const matches = searchSkills(dirs, evidence, 3);
-  const updTarget = pickUpdateTarget(matches, opts.updateThreshold ?? 18);
+  const threshold = opts.updateThreshold ?? 18;
+  const updTarget = pickUpdateTarget(matches, threshold);
+  const slimEarly = matches.map((m) => ({ name: m.name, score: m.score, matched: m.matched }));
+  // Ambiguous overlap (two proven skills both half-cover this) → refuse autonomous create (anti-bloat).
+  if (!updTarget && isAmbiguousExistingRoute(matches, threshold)) {
+    return { action: "none", reason: `ambiguous existing skills: ${matches.slice(0, 3).map((m) => `${m.name}(s${m.score}/m${m.matched})`).join(", ")}; refusing autonomous create`, matches: slimEarly };
+  }
+  // On UPDATE, show the model the existing proven skill so it PATCHES rather than rewrites from scratch.
+  const existingForUpdate = updTarget ? (() => { try { const d = dirs.find((x) => existsSync(join(x, updTarget.name, "SKILL.md"))); return d ? readSkill(d, updTarget.name) : ""; } catch { return ""; } })() : "";
+  const updateContext = existingForUpdate ? `\n\nEXISTING SKILL CONTENT (preserve proven core; patch in new lessons, do not rewrite from scratch):\n\`\`\`markdown\n${existingForUpdate.slice(0, 3500)}\n\`\`\`` : "";
   const hint = updTarget
-    ? `\n\nUPDATE-FIRST (anti-bloat): an existing skill already covers this territory — "${updTarget.name}": ${updTarget.description}. PREFER to extend it: keep that exact name, fold the new pitfalls/steps into a single improved full SKILL.md. Only use a different name if the territory is genuinely distinct.`
+    ? `\n\nUPDATE-FIRST (anti-bloat): an existing skill already covers this territory — "${updTarget.name}": ${updTarget.description}. Extend it: keep that exact name, preserve useful existing sections/frontmatter metadata/provenance, and fold ONLY the new pitfalls/steps into one improved full SKILL.md. Do not delete valuable original structure just to make a cleaner rewrite. Only use a different name if the territory is genuinely distinct.${updateContext}`
     : (matches.length ? `\n\nExisting skills (avoid duplicating): ${matches.map((m) => m.name).join(", ")}.` : "");
   // ROBUST extraction — models may prepend reasoning/preamble, wrap in ```fences, or use a
   // "# Title" heading instead of YAML frontmatter. Tolerate all; fall back to the update target.
@@ -1151,7 +1783,12 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   // UPDATE if the chosen name matches an existing skill (routed or coincidental) — anti-bloat win.
   const slim = matches.map((m) => ({ name: m.name, score: m.score, matched: m.matched }));
   const existingNames = new Set(matches.map((m) => m.name));
-  if (existingNames.has(name)) return { action: "update", name, description, body, content, updateTarget: name, matches: slim };
+  if (existingNames.has(name)) {
+    // Compounds-truly: carry the old skill's frontmatter metadata block into the rewrite so an update
+    // never silently drops proven provenance the author forgot to re-emit.
+    const preserved = preserveExistingFrontmatterMetadata(content, existingForUpdate);
+    return { action: "update", name, description, body, content: preserved, updateTarget: name, matches: slim };
+  }
   return { action: "create", name, description, body, content, matches: slim };
 }
 
@@ -1161,9 +1798,11 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
 // ════════════════════════════════════════════════════════════════════════════
 
 // 1. EVIDENCE-PACK MANIFEST — provenance next to each skill: "not model vibes, a git object."
-export type EvidenceManifest = { ts: string; action: string; skill: string; updateTarget?: string; sources: { conversations: number; durableSignals: number }; memfsHits: Array<{ name: string; score: number; matched: number }>; preferencesInjected: string[]; rejectedNoise: Array<{ item: string; reason: string }>; newHash: string; oldHash?: string; gates: { naming: boolean; security: boolean; lint: boolean } };
+export type EvidenceManifest = { ts: string; action: string; skill: string; updateTarget?: string; sources: { conversations: number; durableSignals: number }; memfsHits: Array<{ name: string; score: number; matched: number }>; preferencesInjected: string[]; rejectedNoise: Array<{ item: string; reason: string }>; newHash: string; oldHash?: string; sectionDiff?: { preserved: string[]; dropped: string[]; added: string[] }; gates: { naming: boolean; security: boolean; lint: boolean } };
 export function buildEvidenceManifest(i: { action: string; skill: string; updateTarget?: string; convs: number; signals: number; memfsHits: Array<{ name: string; score: number; matched: number }>; preferences: string[]; rejected: Array<{ item: string; reason: string }>; newContent: string; oldContent?: string }): EvidenceManifest {
-  return { ts: new Date().toISOString(), action: i.action, skill: i.skill, updateTarget: i.updateTarget, sources: { conversations: i.convs, durableSignals: i.signals }, memfsHits: i.memfsHits.map((m) => ({ name: m.name, score: m.score, matched: m.matched })), preferencesInjected: i.preferences, rejectedNoise: i.rejected, newHash: hash(i.newContent), oldHash: i.oldContent ? hash(i.oldContent) : undefined, gates: { naming: true, security: true, lint: true } };
+  // On UPDATE, record the section-level diff so a destructive rewrite is reviewable beyond a hash change.
+  const sd = i.oldContent ? compareSkillSections(i.oldContent, i.newContent) : undefined;
+  return { ts: new Date().toISOString(), action: i.action, skill: i.skill, updateTarget: i.updateTarget, sources: { conversations: i.convs, durableSignals: i.signals }, memfsHits: i.memfsHits.map((m) => ({ name: m.name, score: m.score, matched: m.matched })), preferencesInjected: i.preferences, rejectedNoise: i.rejected, newHash: hash(i.newContent), oldHash: i.oldContent ? hash(i.oldContent) : undefined, sectionDiff: sd ? { preserved: sd.preservedSections, dropped: sd.droppedSections, added: sd.addedSections } : undefined, gates: { naming: true, security: true, lint: true } };
 }
 
 // 2. PERSONA/PREFS RETRIEVAL — Hermes PROMPTS for "how this user wants it"; Letta RETRIEVES it from memory.
@@ -1328,7 +1967,7 @@ function publishSkillToCatalog(name: string, ctx?: any): string {
   if (!priv.ok) throw new Error(`privacy blocked: ${priv.issues.join("; ")}`);
   const dstDir = join(GLOBAL_SKILLS_DIR, nm);
   mkdirSync(dstDir, { recursive: true });
-  const published = content.includes(MM_TAG) ? content + `\n<!-- ${MM_TAG}: published ${new Date().toISOString().slice(0, 10)}; catalog=global -->\n` : content + `\n<!-- ${MM_TAG}: published ${new Date().toISOString().slice(0, 10)}; catalog=global -->\n`;
+  const published = content.includes(MM_TAG) ? content : content + `\n<!-- ${MM_TAG}: published ${new Date().toISOString().slice(0, 10)}; catalog=global -->\n`;
   writeFileSync(join(dstDir, "SKILL.md"), published);
   appendUiEvent({ phase: "skill_published", summary: `published '${nm}' to custom skill catalog`, skill: nm, action: "publish", route: "global-catalog" });
   appendMeshFeed({ type: "skill_published", skill: nm, route: "PUBLISH", signals: 0 });
@@ -1344,7 +1983,7 @@ function reviewForkAuthor(ctx: any): (sys: string, user: string) => Promise<stri
       if (typeof ctx?.conversation?.fork !== "function") return "";
       const forked = await ctx.conversation.fork({ hidden: true });
       const stream = await forked.sendMessageStream([{ role: "user", content: `${sys}\n\n${user}` }]);
-      let out = ""; for await (const c of stream as AsyncIterable<any>) out += streamChunkText(c);
+      const out = await consumeStreamBounded(stream as AsyncIterable<unknown>);
       return out.trim();
     } catch { return ""; }
   };
@@ -1357,12 +1996,17 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
   // In staged mode, staged skills are part of the dedupe surface. Otherwise repeated manual reflects
   // can spray near-duplicate staged siblings before review/graduation (live dogfood catch).
   const reviewDirs = config.mode === "auto" ? dirs : [...dirs, STAGED_DIR];
-  const ev = buildCrossConversationEvidence(loadExperience());
+  const exp = loadExperience();
+  const ev = buildCrossConversationEvidence(exp);
+  // ENGRAM: the prioritized-replay + reconsolidation brief over the SAME trace. This is the
+  // salience-triaged, reverse-replay-credited, reconsolidation-aware evidence that REPLACES a
+  // uniform recent-history scan — the core v5 behavior, applied live to what the reviewer sees.
+  const engram = engramConsolidate(exp, managedView(reviewDirs).map((m) => ({ name: m.name, body: m.body })));
   appendUiEvent({ phase: "review_started", summary: `reviewing ${ev.convs} sessions / ${ev.items} durable signals` }); writeUiState({ phase: "reviewing", detail: `${ev.convs} sessions / ${ev.items} signals` });
   if (ev.items < (config.minItems ?? 2)) { appendUiEvent({ phase: "reflect_none", summary: `nothing to save yet (${ev.items} signals)` }); writeUiState({ phase: "idle", last: "nothing to save yet" }); return { action: "none", reason: `only ${ev.items} cross-session signals (need ≥${config.minItems ?? 2})` }; }
   // PERSONALIZED PATCHING: retrieve the user's actual preferences from memory and inject them.
   const prefs = retrievePreferences(ev.digest, process.env.MEMORY_DIR);
-  const digest = ev.digest + (prefs.length ? `\n\nUSER PREFERENCES (from this agent's memory — bake the relevant ones into the skill's guidance):\n${prefs.map((p) => `- ${p}`).join("\n")}` : "");
+  const digest = `${engram.digest}\n\n${ev.digest}` + (prefs.length ? `\n\nUSER PREFERENCES (from this agent's memory — bake the relevant ones into the skill's guidance):\n${prefs.map((p) => `- ${p}`).join("\n")}` : "");
   // LIVE MIRROR: surface the route + writing phase during the (long) author call, so the panel animates.
   const preTgt = pickUpdateTarget(searchSkills(reviewDirs, digest, 3), 18);
   const routeKey = preTgt ? `UPDATE:${preTgt.name}` : "CREATE";
@@ -1425,16 +2069,19 @@ export async function runReflectiveReview(ctx: any, config: { mode?: "staged" | 
 }
 
 // Test hook (deterministic validation without live data).
-export const __mm = { commandTemplate, fingerprint, detect, detectTemplates, detectSequences, maturityScore, MM, loadRows, dedupCheck, slug, draftSkillFromCandidate, candidateName, candidateDescription, curateManagedSkills, managedSkillUsage,
+export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFragment, detect, detectTemplates, detectSequences, maturityScore, MM, loadRows, dedupCheck, slug, draftSkillFromCandidate, candidateName, candidateDescription, curateManagedSkills, managedSkillUsage,
   streamChunkText, isDurableLesson, isValidSkillName, buildCrossConversationEvidence, REVIEW_PROMPT, reviewAndAuthor, searchSkills, pickUpdateTarget, runReflectiveReview, graduateStagedSkill, publishSkillToCatalog, catalogPrivacyScan, isHighConfidenceCreate, runAutonomousPrune,
   buildEvidenceManifest, retrievePreferences, coverageMap, churnSignal, summarizeReflectActions, renderMuscleMemoryPanel, loadMeshFeed, renderMeshFeed,
   buildRegistry, curatorPass, skillVerbs, specDrift, lifecycleTransition, CURATOR, setPinned, isPinned, buildDefenses, preActionDefense,
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
   // v2
-  classifyError, mergeOutcomes, correlateOutcomes, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig,
+  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig,
   // lifecycle file helpers (for end-to-end manage proof)
-  writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG };
+  writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG,
+  // v5 ENGRAM — CLS loop core (pure)
+  ENGRAM, expectationFor, predictionError, tagExperience, captureTagged, skillRetrieved, labileSkills, replayQueue, reverseReplay, interleave, engramConsolidate, renderEngramDigest,
+  guardDecision, buildNeocortexBlock, nativeEnabled, NEOCORTEX_BLOCK };
 
 export default function activate(letta: any) {
   const disposers: Array<() => void> = [];
@@ -1445,13 +2092,35 @@ export default function activate(letta: any) {
   const refreshDefenses = () => { try { defensesCache = buildDefenses(loadExperience()); } catch { defensesCache = []; } };
   refreshDefenses();
 
+  // E3: ENFORCED DEFENSE OVERLAY — opt-in via MM_GUARD=ask|deny (default off). A recurring,
+  // unrecovered failure muscle-memory has learned becomes a real ask/deny BEFORE the tool runs
+  // (reconsolidated anti-pattern → prevention — the hook ACE/Hermes lack). Never throws; gated
+  // to the approval phase so it can never interfere with execution it didn't block.
+  if (typeof letta.permissions?.register === "function") {
+    type GuardEvent = { toolName?: string; args?: Record<string, unknown>; phase?: string };
+    disposers.push(letta.permissions.register({
+      id: "muscle-memory-guard",
+      description: "Ask/deny before a tool that recurs into a learned, unrecovered failure (set MM_GUARD=ask|deny).",
+      check: (event: GuardEvent) => {
+        try {
+          const mode: GuardMode = process.env.MM_GUARD === "deny" ? "deny" : process.env.MM_GUARD === "ask" ? "ask" : "off";
+          if (mode === "off" || event?.phase !== "approval") return undefined;
+          const d = guardDecision(String(event?.toolName ?? ""), event?.args ?? {}, defensesCache, mode);
+          return d ? { decision: d.decision, reason: d.reason } : undefined;
+        } catch { return undefined; }
+      },
+    }));
+  }
+
   if (letta.capabilities?.events?.tools) {
     disposers.push(letta.events.on("tool_start", (event: any) => {
       try {
         const tool = String(event?.toolName ?? "");
         if (!tool) return;
         const { fp, tmpl } = fingerprint(tool, event?.args ?? {});
-        appendJsonl(LOG_PATH, { ts: Date.now(), conv: event?.conversationId ?? null, agent: event?.agentId ?? null, tool, fp, tmpl, h: hash(fp), id: event?.toolCallId ?? null });
+        const cap = process.env.MM_CAPTURE;
+        const fix = (cap === "worked" && (tool === "Edit" || tool === "Write" || tool === "fast_apply")) ? buildDiffFragment(event?.args ?? {}) : undefined;
+        appendJsonl(LOG_PATH, { ts: Date.now(), conv: event?.conversationId ?? null, agent: event?.agentId ?? null, tool, fp, tmpl, h: hash(fp), id: event?.toolCallId ?? null, ...(fix ? { fix } : {}) });
         // v2 edge: Skill-usage tracking (curator) + PRE-ACTION defense (the tool_start hook Hermes lacks).
         if (tool === "Skill" && typeof event?.args?.skill === "string") bumpUsage(slug(String(event.args.skill)));
         if (defensesCache.length) {
@@ -1467,9 +2136,13 @@ export default function activate(letta: any) {
     try {
       disposers.push(letta.events.on("tool_end", (event: any) => {
         try {
-          const ok = event?.ok ?? (event?.isError ? false : event?.error ? false : true);
-          const err = ok === false ? classifyError(event?.resultText ?? event?.error ?? event?.result ?? "", false) : null;
-          appendJsonl(OUTCOME_PATH, { ts: Date.now(), id: event?.toolCallId ?? null, tool: event?.toolName ?? null, conv: event?.conversationId ?? null, ok: !!ok, err });
+          // Real Letta tool_end contract (src/mods/types.ts): { status:"success"|"error", output }.
+          const status = String(event?.status ?? "");
+          const ok = status ? status === "success" : (event?.ok ?? !(event?.isError || event?.error));
+          const err = ok ? null : classifyError(event?.output ?? event?.resultText ?? event?.error ?? "", false);
+          const cap = process.env.MM_CAPTURE;
+          const errMsg = (!ok && (cap === "context" || cap === "worked")) ? redactFragment(event?.output ?? event?.resultText ?? event?.error ?? "", 8, 320) : undefined;
+          appendJsonl(OUTCOME_PATH, { ts: Date.now(), id: event?.toolCallId ?? null, tool: event?.toolName ?? null, conv: event?.conversationId ?? null, ok, err, ...(errMsg ? { errMsg } : {}) });
         } catch { /* best-effort */ }
         return; // do NOT modify the tool result
       }));
@@ -1485,7 +2158,7 @@ export default function activate(letta: any) {
         const started = spanByConv.get(String(event?.conversationId ?? "?")) ?? Date.now();
         const span = { tokensIn: event?.usage?.promptTokens ?? event?.tokensIn, tokensOut: event?.usage?.completionTokens ?? event?.tokensOut, ms: Date.now() - started, stop: event?.stopReason };
         let t: any = {}; try { if (existsSync(TELEMETRY_PATH)) t = JSON.parse(readFileSync(TELEMETRY_PATH, "utf8")); } catch {}
-        const agg = aggregateTelemetry([...(t.spans ? [] : []), span]);
+        const agg = aggregateTelemetry([span]);
         t.calls = (t.calls || 0) + agg.calls; t.tokensIn = (t.tokensIn || 0) + agg.tokensIn; t.tokensOut = (t.tokensOut || 0) + agg.tokensOut; t.ms = (t.ms || 0) + agg.ms;
         try { ensureDir(); writeFileSync(TELEMETRY_PATH, JSON.stringify(t)); } catch {}
       } catch { /* best-effort */ }
@@ -1502,7 +2175,7 @@ export default function activate(letta: any) {
     }));
     disposers.push(letta.events.on("compact_end", (event: any) => {
       try { ensureDir(); mkdirSync(RECEIPTS_DIR, { recursive: true });
-        writeFileSync(join(RECEIPTS_DIR, `compact-end-${Date.now()}.json`), JSON.stringify({ phase: "end", conv: event?.conversationId ?? null, before: event?.beforeMessageCount ?? null, after: event?.afterMessageCount ?? null, ts: Date.now() }));
+        writeFileSync(join(RECEIPTS_DIR, `compact-end-${Date.now()}.json`), JSON.stringify({ phase: "end", conv: event?.conversationId ?? null, trigger: event?.trigger ?? null, messagesBefore: event?.messagesBefore ?? null, messagesAfter: event?.messagesAfter ?? null, contextTokensBefore: event?.contextTokensBefore ?? null, contextTokensAfter: event?.contextTokensAfter ?? null, ts: Date.now() }));
       } catch {}
     }));
   } catch { /* compact events not available */ }
@@ -1511,6 +2184,14 @@ export default function activate(letta: any) {
     disposers.push(letta.events.on("conversation_close", (event: any, ctx: any) => {
       appendJsonl(SESSIONS_PATH, { ts: Date.now(), conv: event?.conversationId ?? null, agent: event?.agentId ?? null, reason: event?.reason ?? null, toolCalls: event?.toolCallCount ?? null, messages: event?.messageCount ?? null, durationMs: event?.durationMs ?? null });
       refreshDefenses(); // rebuild the pre-action defense set off the hot path
+      // E3.5 NATIVE NEOCORTEX: project the consolidated skill index into the agent's core memory
+      // block so it is in-context every turn (opt-in MM_NATIVE=blocks). Best-effort; never blocks close.
+      if (nativeEnabled("blocks")) {
+        try {
+          const managed = managedView(scanDirs(ctx ?? {})).map((m) => ({ name: m.name, description: m.description }));
+          void syncNeocortexBlock(letta.client, event?.agentId ?? null, buildNeocortexBlock(managed));
+        } catch { /* best-effort */ }
+      }
       // AUTOPILOT trigger — opt-in only (MM_AUTOPILOT=staged|auto), at session end (idle, never mid-work).
       const apMode = process.env.MM_AUTOPILOT;
       if (apMode === "staged" || apMode === "auto") { runAutopilot(ctx ?? { agentId: event?.agentId }, { ...AUTOPILOT_DEFAULT, mode: apMode }).catch(() => { /* autopilot must never break the app */ }); }
@@ -1589,6 +2270,29 @@ export default function activate(letta: any) {
           const icon = (st: string) => st === "covered" ? "✓" : st === "uncovered" ? "＋" : st === "over-covered" ? "⧉" : "✗";
           return { type: "output", output: cov.length ? cov.map((c) => `${icon(c.status)} [${c.status}] ${c.domain}${c.skill ? ` → ${c.skill}` : ""}`).join("\n") : "(no durable task-classes yet)" };
         }
+        if (sub === "engram") {
+          // The CLS loop, observable (read-only): salience-ranked replay + reverse-replay credit +
+          // synaptic rescue + labile (reconsolidation) skills — the prioritized "dream".
+          const dirs = scanDirs(ctx);
+          const plan = engramConsolidate(loadExperience(), managedView(dirs).map((m) => ({ name: m.name, body: m.body })));
+          const head = `🧠 ENGRAM (CLS loop) · hippocampus ${plan.hippoSize} reps · ${plan.replay.length} replay · ${plan.rescued.length} rescued · ${plan.labile.length} labile`;
+          return { type: "output", output: `${head}\n\n${plan.digest}` };
+        }
+        if (sub === "lifecycle" || sub === "skills") {
+          // The whole cycle, read-only: creation (staged) → use (earning) → idle (prune candidates) → retired (reversible).
+          const dirs = scanDirs(ctx);
+          const reg = buildRegistry(dirs);
+          let staged: string[] = []; try { staged = existsSync(STAGED_DIR) ? readdirSync(STAGED_DIR).filter((n) => existsSync(join(STAGED_DIR, n, "SKILL.md"))) : []; } catch { /* */ }
+          const used = reg.skills.filter((s) => s.uses > 0);
+          const idle = reg.skills.filter((s) => s.uses === 0 && s.state !== "archived");
+          const archived = reg.skills.filter((s) => s.state === "archived");
+          const L = ["💾 muscle-memory · skill lifecycle (creation → use → prune)"];
+          L.push(`\n🌱 staged · 1-tap to graduate (${staged.length})`); staged.slice(0, 8).forEach((n) => L.push(`   · ${n}`));
+          L.push(`\n✅ active · earning context (${used.length})`); used.slice(0, 10).forEach((s) => L.push(`   · ${s.name} — ${s.uses} uses${s.pinned ? " 📌" : ""}`));
+          L.push(`\n💤 idle · prune candidates (${idle.length})`); idle.slice(0, 10).forEach((s) => L.push(`   · ${s.name}${s.pinned ? " 📌 pinned (protected)" : " — retires after 30d unused (reversible)"}`));
+          if (archived.length) { L.push(`\n🗄 retired · reversible quarantine (${archived.length})`); archived.slice(0, 6).forEach((s) => L.push(`   · ${s.name}${s.absorbedInto ? ` → absorbed into ${s.absorbedInto}` : ""}`)); }
+          return { type: "output", output: L.join("\n") };
+        }
         const rows = loadExperience();
         const byTool: Record<string, number> = {};
         for (const r of rows) byTool[r.tool] = (byTool[r.tool] || 0) + 1;
@@ -1616,7 +2320,7 @@ export default function activate(letta: any) {
           `mature candidates: ${candidates.length} (${templates.length} templates, ${sequences.length} sequences)`,
           cand || `  (none mature yet — need ≥${MM.MIN_COUNT}× across ≥${MM.MIN_CONVS} conversations)`,
           ``,
-          `commands: /muscle-memory [events|squad|staged|coverage]`,
+          `commands: /muscle-memory [lifecycle|staged|coverage|engram|events|squad]`,
         ].join("\n");
         return { type: "output", output: out };
       },
