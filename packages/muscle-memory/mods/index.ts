@@ -1324,7 +1324,11 @@ export function scanSkillContent(content: string): { ok: boolean; issues: string
   if (/\bcurl\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba)?sh\b/i.test(c) || /\bwget\b[^\n|]*\|\s*(?:ba)?sh\b/i.test(c)) issues.push("pipe-to-shell (curl|sh)");
   if (/\brm\s+-[rf]{1,2}\s+(?:["']?[~/]|\$HOME|\*)/.test(c)) issues.push("naked rm -rf on root/home/glob");
   if (/(?:^|[\s;&|])sudo\s+\S/i.test(c)) issues.push("sudo command");
-  if (/\bgit\s+push\b[^\n]*--force\b|\bpush\s+--force(?:-with-lease)?\b/i.test(c)) issues.push("force push");
+  // NOTE: force-push / reset --hard / rm etc. are NOT security threats — they are legitimate workflow ops a
+  // skill may need to teach (git rebase, deploy rollback). Hard-blocking them here made mm unable to distil
+  // entire domains (git/rebase/deploy). The real concern — "use them with a safety net" — is the SAFE-FIRST
+  // QUALITY gate's job (sotaQualityGaps), which flags destructive ops lacking a backup/--force-with-lease/
+  // dry-run and regenerates. Security scanner = true threats (secrets, exfil, pipe-to-shell, injection) only.
   if (Math.ceil(c.length / 4) > 5000) issues.push("body > 5000 tokens (decompose into references/)");
   if (/\bignore\s+(?:all\s+|the\s+)?(?:previous|prior|above)\s+(?:instructions|messages|prompts|rules)\b/i.test(c) || /\b(?:disregard|override)\s+(?:your\s+|the\s+)?(?:system|previous)\s+(?:prompt|instructions)\b/i.test(c)) issues.push("prompt-injection phrasing");
   // concrete hardcoded API-key/token formats (QA-hardened)
