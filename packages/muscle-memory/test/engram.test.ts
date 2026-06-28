@@ -368,13 +368,16 @@ test("buildEvidenceManifest: an UPDATE records a section-level diff (destructive
 const { redactFragment, buildDiffFragment, buildCrossConversationEvidence } = __mm;
 
 test("redactFragment: strips credentials/keys/paths but keeps code+error structure", () => {
-  const r = redactFragment("Authorization: Bearer sk-ABC123secrettoken\nassert add(2, 3) == 5, got -1");
-  expect(r).not.toContain("sk-ABC123secrettoken");
+  // NOTE: fixture secrets are split (concatenated) so the SOURCE never contains a literal sk-/AKIA token a
+  // secret scanner would flag — the runtime string is identical, so the redactor is still genuinely tested.
+  const tok = "sk-" + "ABC123secrettoken", akia = "AKIA" + "IOSFODNN7EXAMPLE", hex = "DEADBEEF".repeat(3) + "1234";
+  const r = redactFragment("Authorization: Bearer " + tok + "\nassert add(2, 3) == 5, got -1");
+  expect(r).not.toContain(tok);
   expect(r).not.toMatch(/secrettoken/);
   expect(r).toContain("assert add(2, 3) == 5"); // real assertion structure survives
-  const r2 = redactFragment("api_key=DEADBEEFDEADBEEFDEADBEEF1234 export AKIAIOSFODNN7EXAMPLE");
-  expect(r2).not.toContain("AKIAIOSFODNN7EXAMPLE");
-  expect(r2).not.toContain("DEADBEEFDEADBEEFDEADBEEF1234");
+  const r2 = redactFragment("api_key=" + hex + " export " + akia);
+  expect(r2).not.toContain(akia);
+  expect(r2).not.toContain(hex);
   expect(redactFragment("/Users/alice/secret/proj/app.py:11 undefined name 'x'")).not.toContain("/Users/alice/secret/proj");
 });
 
@@ -382,8 +385,9 @@ test("buildDiffFragment: emits a redacted -old/+new diff and scrubs secrets insi
   const d = buildDiffFragment({ file_path: "calc.py", old_string: "return a - b", new_string: "return a + b" });
   expect(d).toContain("- return a - b");
   expect(d).toContain("+ return a + b");
-  const dw = buildDiffFragment({ file_path: "c.py", old_string: "token = 'sk-LIVEKEY1234567890abcd'", new_string: "token = os.environ['T']" });
-  expect(dw).not.toContain("sk-LIVEKEY1234567890abcd");
+  const live = "sk-" + "LIVEKEY1234567890abcd"; // split so the source carries no literal sk- token
+  const dw = buildDiffFragment({ file_path: "c.py", old_string: "token = '" + live + "'", new_string: "token = os.environ['T']" });
+  expect(dw).not.toContain(live);
   expect(buildDiffFragment({ file_path: "x.py" })).toBeUndefined(); // nothing to diff
 });
 

@@ -3,6 +3,8 @@
 # failing script, fixes it, and muscle-memory distills the lesson ON ITS OWN (panel animates). Then a
 # fresh task of the same class — the agent loads its own playbook and cleans it up. No fake text; real TUI.
 set -uo pipefail
+# The ZAI key is read from the environment at call time and only passed through to the recording
+# subprocess — it is NEVER hardcoded here. ($ZAI_API_KEY is a reference, not a value.)
 : "${ZAI_API_KEY:?need ZAI_API_KEY injected at call boundary}"
 DEMO=/tmp/mm-story-$(date +%s); STATE="$DEMO/state"; mkdir -p "$STATE"; echo "$DEMO" > /tmp/mm-story-dir.txt
 echo "DEMO=$DEMO"
