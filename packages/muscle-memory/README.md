@@ -107,4 +107,24 @@ Then just work. It captures your tool-use, and at sleep-time / session-close it 
 npm run verify   # transpile + 41 unit tests + 5-axis bench + 150-seed eval + full-lifecycle demo
 ```
 
-Single-file mod (`mods/index.ts`), no runtime deps beyond Node builtins. MIT.
+No runtime dependencies beyond Node builtins. MIT.
+
+## Project structure
+
+A layered, single-responsibility module tree (`core ← detect ← gate/publish/engram/lifecycle ← autopilot ← index`):
+
+```
+mods/
+  core.ts        paths · redaction · hashing · io · skill-file helpers · content scan · ui-events · mesh
+  detect.ts      fingerprints · templates · sequences · repair-chains · outcome inference · evidence
+  gate.ts        SOTA quality gate · library audit · cross-shelf dedup · draft authoring
+  publish.ts     the publish supply chain (preflight → stage → approve → visibility) + catalog
+  engram.ts      the CLS loop — prioritized replay · reconsolidation · defenses · neocortex bridge
+  lifecycle.ts   registry · curation · usage tracking · coverage · pruning · telemetry
+  autopilot.ts   autopilot · update-first routing · reviewAndAuthor · the autonomous reflect loop
+  ui.ts          the live panel renderer
+  index.ts       the mod entry: activate(), event handlers, command dispatch, tool registration
+```
+
+The package ships the source modules (the Letta CLI bundles them on load); the public API is the mod
+entry plus a `__mm` test surface.
