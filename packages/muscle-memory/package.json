@@ -28,9 +28,12 @@
     "LICENSE",
     "mods",
     "test",
-    "demo.gif",
     "HERMES-COMPARISON.md"
   ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
   "letta": {
     "manifestVersion": 1,
     "mods": [
