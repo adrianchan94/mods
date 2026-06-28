@@ -1,5 +1,15 @@
 # muscle-memory vs the real Hermes Agent — skill distillation, measured
 
+> **🏆 v4 — the fair fight (latest, supersedes v3).** With *real* Hermes installed and driven through its
+> own skill-manager on **GLM-5.2**, a neutral order-swapped judge, **3 samples per cell**: muscle-memory
+> **decisively wins** every regime where continual learning applies — failing-test **4-session +8.3**,
+> **8-session +11.3**, **lint +8.7** (all 3/3 robust) — and single-session is a **principled near-tie/
+> abstention** (mm refuses to distill from one example by design). **Beats Hermes where continual learning
+> matters; refuses to overfit where evidence is thin.** Full matrix + reproduction:
+> [`head-to-head/v4-fair-fight/RESULTS.md`](./head-to-head/v4-fair-fight/RESULTS.md). v4 also adds a
+> **SOTA quality gate** (self-corrects every distilled skill; verdicts validated against the neutral
+> judge), a `/muscle-memory audit` command, and a proven fact-preserving skill **upgrader**.
+
 > **⚠️ Update (de-confounded v2 below).** The single-class "55.5 vs 50.5 muscle-memory edge" in this section is **superseded** — it used a hand-refined mm draft vs a weaker-model Hermes on one cherry-picked class. A symmetric, same-model (GLM-5.2), neutral-blind-judge run across 5 classes ([`head-to-head/`](./head-to-head/)) shows **Hermes decisively ahead on distilled-skill quality**. Then **v3** (worked-example capture, `MM_CAPTURE`) closes the gap: muscle-memory goes from −39.5 to a **peer** of Hermes — winning the cold-start regime (+2 to +6.5 single-session) and hygiene, tying at equal experience. See *v3* below + [`head-to-head/v3-worked-examples/`](./head-to-head/v3-worked-examples/).
 
 > **Full campaign writeup:** [`head-to-head/CAMPAIGN.md`](./head-to-head/CAMPAIGN.md) — the whole story end-to-end (benchmark strategy, de-confounding, the design change, every result, honest verdict).

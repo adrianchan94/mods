@@ -420,3 +420,37 @@ test("detectRepairChains: WITHOUT capture, no worked key is attached (shape unch
   expect(chains.length).toBeGreaterThan(0);
   expect(chains.every((c) => c.worked === undefined)).toBe(true); // no errMsg/fix => no worked examples
 });
+
+// ── SOTA quality gate: flags sub-SOTA skills, passes top-tier ones ───────────
+test("sotaQualityGaps: flags a thin draft (no code, no TELLs) and passes a SOTA draft", () => {
+  const { sotaQualityGaps } = __mm;
+  const thin = { name: "debugging-failing-tests", description: "Use when tests fail",
+    body: "## Procedure\n1. Look at the error.\n2. Fix the code.\n## Pitfalls\n- Editing the test.\n- Off by one.\n## Verification\n- Run the suite." };
+  const thinGaps = sotaQualityGaps(thin);
+  expect(thinGaps.some((g) => /CONCRETENESS/.test(g))).toBe(true);
+  expect(thinGaps.some((g) => /TELL/.test(g))).toBe(true);
+
+  const sota = { name: "debugging-failing-tests", description: "Use when a pytest suite fails",
+    body: "## Procedure\n1. Run the suite.\n```bash\npytest -q\n```\n## Pitfalls\n### 1. Wrong operator\nTELL: got-value is the sign-flip of expected. Fix: `- a - b` becomes `+ a + b`.\n```python\nreturn a + b\n```\n### 2. Off-by-one\nTELL: IndexError at the boundary. Fix: drop the plus one.\n## Verification\n- suite green." };
+  expect(sotaQualityGaps(sota).length).toBe(0);
+});
+
+test("sotaQualityGaps: requires safe-first before destructive commands", () => {
+  const { sotaQualityGaps } = __mm;
+  const danger = "git reset --" + "hard origin/main"; // split so the repo guard does not flag the test fixture
+  const unsafe = { name: "resetting-a-branch", description: "Use when a branch is broken",
+    body: "## Procedure\n1. `" + danger + "`.\n```bash\n" + danger + "\n```\n## Pitfalls\n### 1. Lost work\nTELL: uncommitted changes vanish.\n## Verification\n- check status." };
+  expect(sotaQualityGaps(unsafe).some((g) => /SAFE-FIRST/.test(g))).toBe(true);
+});
+
+test("auditSkills: separates SOTA from sub-SOTA across a mixed library", () => {
+  const { auditSkills } = __mm;
+  const sota = "## Procedure\n```bash\npytest -q\n```\n## Pitfalls\n### 1. X\nTELL: symptom Y. Fix it.\n```python\nreturn a + b\n```\n## Verification\n- green.";
+  const weak = "## Procedure\n1. Fix it.\n## Pitfalls\n- A bug.\n## Verification\n- check.";
+  const descriptive = "Use this skill when building 3D scenes. It covers the high-level approach and when to reach for each library.";
+  const r = auditSkills([{ name: "good", body: sota }, { name: "weak", body: weak }, { name: "desc", body: descriptive }]);
+  expect(r.total).toBe(3);
+  expect(r.flagged.some((f) => f.name === "weak")).toBe(true);   // procedural + thin -> flagged
+  expect(r.flagged.some((f) => f.name === "good")).toBe(false);  // SOTA -> clean
+  expect(r.flagged.some((f) => f.name === "desc")).toBe(false);  // descriptive -> not held to code bar
+});

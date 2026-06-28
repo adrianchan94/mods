@@ -1,0 +1,68 @@
+{
+  "score": {
+    "mm": {
+      "altitude": 7,
+      "reusability": 8,
+      "pitfalls": 8,
+      "hygiene": 8,
+      "actionability": 8,
+      "safety": 9,
+      "concreteness": 8
+    },
+    "hermes": {
+      "altitude": 6.5,
+      "reusability": 7,
+      "pitfalls": 6.5,
+      "hygiene": 5.5,
+      "actionability": 8,
+      "safety": 6,
+      "concreteness": 8.5
+    }
+  },
+  "total": {
+    "mm": 56,
+    "hermes": 48
+  },
+  "raw": {
+    "r1": {
+      "A": {
+        "altitude": 7,
+        "reusability": 8,
+        "pitfalls": 8,
+        "hygiene": 8,
+        "actionability": 8,
+        "safety": 9,
+        "concreteness": 8
+      },
+      "B": {
+        "altitude": 6,
+        "reusability": 7,
+        "pitfalls": 7,
+        "hygiene": 6,
+        "actionability": 8,
+        "safety": 6,
+        "concreteness": 9
+      }
+    },
+    "r2": {
+      "A": {
+        "altitude": 7,
+        "reusability": 7,
+        "pitfalls": 6,
+        "hygiene": 5,
+        "actionability": 8,
+        "safety": 6,
+        "concreteness": 8
+      },
+      "B": {
+        "altitude": 7,
+        "reusability": 8,
+        "pitfalls": 8,
+        "hygiene": 8,
+        "actionability": 8,
+        "safety": 9,
+        "concreteness": 8
+      }
+    }
+  }
+}

@@ -698,7 +698,7 @@ export function detectRepairChains(rows: Row[]): RepairChain[] {
   const dedupeWorked = (ws: Worked[]): Worked[] => {
     const seen = new Set<string>(); const out: Worked[] = [];
     for (const w of ws) { const k = `${w.errMsg ?? ""}|${w.fix ?? ""}`; if (seen.has(k)) continue; seen.add(k); out.push(w); }
-    return out.slice(0, 5);
+    return out.slice(0, 12); // keep ALL distinct worked-examples (was 5 — that cap silently dropped diverse failure classes, the exact depth Hermes wins on). Distinct cases ARE the edge; 12 bounds pathological cases.
   };
   type Lit = { trigger: string; errClass: string; fixStep: string; count: number; convs: Set<string>; worked: Worked[] };
   const literal: Lit[] = [...acc.entries()].map(([k, e]) => { const [trigger, fixStep] = k.split("|"); return { trigger, errClass: e.errClass, fixStep, count: e.count, convs: e.convs, worked: e.worked }; });
@@ -767,6 +767,53 @@ export function lintSkillDraft(d: { name: string; description: string; body: str
   if (!/##\s+verification/i.test(d.body)) issues.push("body missing ## Verification");
   if (opts.needsPitfalls && !/##\s+(pitfalls|failure recovery)/i.test(d.body)) issues.push("fix-pattern skill must include ## Pitfalls / Failure recovery");
   return { ok: issues.length === 0, issues };
+}
+
+// — SOTA QUALITY GATE (2026-06-28): structural lint proves a skill is VALID; this proves it's TOP-TIER.
+// Deterministic checks for the elements a world-class skill always has (the exact gaps a neutral judge
+// flags on sub-SOTA skills): concrete code, a diagnostic TELL per pitfall, a safe-first step before any
+// destructive command, and class-level generality (not a hardcoded one-off). Returns the missing elements
+// so reviewAndAuthor can regenerate with targeted feedback — making EVERY distilled skill self-correct
+// toward SOTA, not just the high-diversity ones. The bar that beat Hermes, enforced on every skill.
+export function sotaQualityGaps(d: { name: string; description: string; body: string }): string[] {
+  const gaps: string[] = []; const b = d.body; const lc = b.toLowerCase();
+  // TYPE-AWARE: only hold PROCEDURAL skills (how-to: have a Procedure/Steps/Pitfalls/Method) to the
+  // concrete-code + TELL bars. Descriptive/router skills (a "when to use library X" guide with no
+  // procedure) legitimately carry no code — don't false-flag them. mm only ever distils procedural skills.
+  const procedural = /##\s+(procedure|steps|workflow|method|pitfalls|failure recovery|recipe|how to)/i.test(b);
+  // 1. CONCRETENESS — a top-tier procedural skill shows exact correct code/commands, not prose. NOTE: this
+  // is a reliable signal for mm's distilled fix/debug/validate skills (validated vs a neutral judge); on
+  // rich prose-heavy DOMAIN PLAYBOOKS it can over-flag, so the library-wide audit is a TRIAGE, not a verdict.
+  if (procedural && (b.match(/```/g) || []).length < 2) gaps.push('CONCRETENESS: add real fenced code/command examples (show the exact correct fix, never hand-wave)');
+  // 2. DIAGNOSTIC TELLS — the #1 gap on sub-SOTA skills: each pitfall needs the at-a-glance symptom.
+  if (/##\s+pitfalls/i.test(b)) {
+    const tells = (lc.match(/\btell\b|\bsymptom\b|at-a-glance|the signal|you'll see|gives it away/g) || []).length;
+    const pitfalls = (b.split(/##\s+pitfalls/i)[1] || "").match(/^\s*(?:[-*]|\d+\.|###)\s/gm)?.length || 0;
+    if (pitfalls >= 2 && tells < Math.min(2, pitfalls)) gaps.push('DIAGNOSTIC TELLS: give each Pitfall a one-line TELL — the at-a-glance symptom/error-string that identifies that failure class');
+  }
+  // 3. SAFE-FIRST — any destructive command must be preceded by a named non-destructive safety net.
+  const destructive = /\b(rm\s+-rf?|reset\s+--hard|force[- ]?push|git\s+push\s+--force|--force\b|drop\s+(table|database)|db[: ]?migrate|delete\s+from|truncate\b|mv\s+[^\n]*\/)/i.test(b);
+  const safeFirst = /\b(back\s?up|snapshot|stash|dry[- ]?run|--dry-run|--check|copy first|inspect|diff before|reversible|safety net|to a branch|tag first)\b/i.test(lc);
+  if (destructive && !safeFirst) gaps.push('SAFE-FIRST: add an explicit non-destructive safety net (backup/snapshot/dry-run/inspect) as the first step before any destructive command');
+  // 4. GENERALITY — a hardcoded single-target skill reads one-off; lift the rule, keep specifics as examples.
+  const idMatches = b.match(/\b(agent-[a-f0-9-]{8,}|[A-Za-z0-9_]+\.com\/[A-Za-z0-9_./-]+|sk-[A-Za-z0-9]{6,})\b/g) || [];
+  if (idMatches.length >= 3) gaps.push('GENERALITY: this reads as a one-off (hardcoded ids/paths) — generalize to a class-level rule and demote the specifics to a worked example');
+  return gaps;
+}
+
+// LIBRARY-WIDE SOTA AUDIT (2026-06-28): the SOTA gate is a pure function, so it scores ANY skill — not
+// just mm-distilled ones. This turns muscle-memory into a library quality engine: scan every skill
+// (installed, hand-authored, or distilled), flag the sub-SOTA ones + their exact gaps, so they can be
+// upgraded (fact-preserving) to top-tier. Read-only; the upgrade itself stays staged/reversible.
+export function auditSkills(skills: Array<{ name: string; description?: string; body: string }>): {
+  total: number; clean: number; flagged: Array<{ name: string; gaps: string[] }>; gapCounts: Record<string, number>;
+} {
+  const flagged: Array<{ name: string; gaps: string[] }> = []; const gapCounts: Record<string, number> = {};
+  for (const s of skills) {
+    const gaps = sotaQualityGaps({ name: s.name, description: s.description ?? "Use when relevant", body: s.body });
+    if (gaps.length) { flagged.push({ name: s.name, gaps }); for (const g of gaps) { const k = g.split(":")[0]; gapCounts[k] = (gapCounts[k] || 0) + 1; } }
+  }
+  return { total: skills.length, clean: skills.length - flagged.length, flagged, gapCounts };
 }
 
 // — my-add #4 / D: EFFECTIVENESS-DRIVEN RETIREMENT + telemetry aggregation —
@@ -1575,7 +1622,7 @@ export function buildCrossConversationEvidence(rows: Row[]): { digest: string; c
 // The tuned v3 reviewer prompt (benchmark-proven Hermes-level: 43-44/50, hermes_level=yes).
 export const REVIEW_PROMPT = `You are the skill-library reviewer for a self-improving AI coding agent (agentskills.io). From the cross-session evidence, author ONE genuinely valuable CLASS-LEVEL skill IF a durable reusable lesson emerged.
 
-Write a TIGHT, COMPLETE skill — a focused finished skill always beats a broad truncated one. Structure: frontmatter (name + description with triggers), then "## When to use" (concrete triggers), "## Procedure" (numbered, concrete, safe-first), "## Pitfalls" (the 3-5 HARDEST-WON failures, each as the real symptom → the exact fix), "## Verification". Keep it focused and UNDER ~70 lines; FINISH every section — never trail off mid-sentence or mid-code-block.
+Write a COMPLETE skill — completeness beats brevity. Structure: frontmatter (name + description with triggers), then "## When to use" (concrete triggers), "## Procedure" (numbered, concrete, safe-first), "## Pitfalls" (one entry per genuinely-distinct hard-won failure, each as the real symptom → the exact fix → a one-line diagnostic TELL), "## Verification", and — when the evidence is diverse — a "## Worked examples (real cases)" section. MATCH LENGTH TO EVIDENCE: a short skill is right for simple/sparse evidence; a RICH, exhaustive skill is right when the evidence is diverse (many distinct real failures) — never sacrifice a real pitfall or worked-example to hit a length target. FINISH every section — never trail off mid-sentence or mid-code-block. Stay organized + hygienic (clear sections, short fenced snippets), never a wall of text.
 
 HARD RULES:
 - CAPTURE EVERY REAL PITFALL: include each genuinely-distinct hard-won failure in the evidence (this breadth of real, cross-session lessons IS the whole advantage), each with its exact fix. Cut filler, redundancy, and obvious steps ruthlessly — but never drop a real pitfall to save space.
@@ -1584,7 +1631,7 @@ HARD RULES:
 - SAFE FIRST: ALWAYS make a non-destructive safety net (a backup branch/tag, a stash, or a copy) the EXPLICIT first step before any destructive/irreversible command (reset --hard, force-push, rm, drop, db migrate) — and name it as the safety net so a wrong move is recoverable.
 - NAMING: class-level only; never an x-to-y transition, error string, PR number, date, codename, or fix-/debug-/audit-today artifact.
 - NEGATIVE FILTER: never capture environment-dependent failures (command-not-found, missing binaries, uninstalled packages, creds) or tool-negatives ("X is broken").
-- WORKED EXAMPLES: the evidence may include real, cross-session symptom→fix examples. GENERALIZE them into ONE high-altitude, reusable class-level discipline (a decision guide that transfers across languages/projects), and cite each real example as a brief concrete illustration (symptom → exact fix) under the matching step or pitfall — never a flat per-bug catalog. For EACH example add a one-line diagnostic TELL (the at-a-glance signal that identifies that failure class). Beyond the observed examples, also cover the 2-3 most common ADJACENT failure modes for this class (e.g. order/state-dependence, import/path errors, masked cascading failures) so the skill is broad. Include a safe-first step (inspect/diff before editing; change source not tests; smallest reversible edit). This cross-session breadth is the edge — use it, but keep the discipline general. Still emit the required frontmatter: a CLASS-level name (a noun phrase like debugging-failing-tests; obey the NAMING rule) and a description that STARTS WITH "Use when".
+- WORKED EXAMPLES (the edge — use them FULLY): the evidence may include real, cross-session symptom→fix examples. Do TWO things, not one: (1) GENERALIZE them into a high-altitude decision guide in the Procedure/Pitfalls (transfers across languages/projects), giving each a one-line diagnostic TELL; AND (2) when the evidence is diverse, ALSO include an explicit "## Worked examples (real cases)" section that catalogs EACH distinct real case compactly — symptom (one line) → the exact fix → the TELL. The generalized guide gives ALTITUDE; the worked-examples catalog gives CONCRETENESS — include BOTH; the catalog is a strength when the cases are real and diverse, not a weakness. CRITICAL: do NOT collapse genuinely-distinct failure classes (e.g. float-truncation vs type-coercion vs input-mutation vs off-by-one are DIFFERENT bugs) into one generic bucket — emit a distinct pitfall + example for EACH. Beyond the observed examples, also cover the 2-3 most common ADJACENT failure modes for this class (e.g. order/state-dependence, import/path errors, masked cascading failures) so the skill is broad. Include a safe-first step (inspect/diff before editing; change source not tests; smallest reversible edit). Still emit the required frontmatter: a CLASS-level name (a noun phrase like debugging-failing-tests; obey the NAMING rule) and a description that STARTS WITH "Use when".
 Output ONLY the complete SKILL.md (no preamble, not truncated), or exactly "NOTHING-TO-SAVE".`;
 
 /** ★ THE MEMFS LEVER: reliable in-mod KEYWORD search over existing skills (no QMD dependency —
@@ -1703,6 +1750,16 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   const hint = updTarget
     ? `\n\nUPDATE-FIRST (anti-bloat): an existing skill already covers this territory — "${updTarget.name}": ${updTarget.description}. Extend it: keep that exact name, preserve useful existing sections/frontmatter metadata/provenance, and fold ONLY the new pitfalls/steps into one improved full SKILL.md. Do not delete valuable original structure just to make a cleaner rewrite. Only use a different name if the territory is genuinely distinct.${updateContext}`
     : (matches.length ? `\n\nExisting skills (avoid duplicating): ${matches.map((m) => m.name).join(", ")}.` : "");
+  // ── ADAPTIVE DEPTH (2026-06-28): scale skill richness to evidence DIVERSITY. Sparse/cold-start evidence
+  // → a tight, hygienic skill (preserves the cold-start win). Diverse, deep evidence (many distinct real
+  // failures) → an exhaustive skill that catalogs every distinct case + a worked-examples section —
+  // completeness is the edge that closes the depth gap vs full-session capture, without losing hygiene.
+  const _classes = (evidence.match(/^- recovered failure:/gm) || []).length;
+  const _examples = (evidence.match(/·\s*example\s*—/g) || []).length;
+  const _diverse = Math.max(_classes, _examples) >= 4;
+  const depthDirective = _diverse
+    ? `\n\nEVIDENCE DEPTH: this evidence holds ${_examples} concrete worked-example${_examples === 1 ? "" : "s"} spanning distinct failure classes. HIGH-DIVERSITY regime — completeness beats brevity. The skill MUST have ALL of these sections (a Procedure-only skill is INCOMPLETE and will be REJECTED):\n- "## Procedure" — a generalized decision guide (symptom → safest fix path).\n- "## Pitfalls" — ONE entry per DISTINCT failure class (symptom → exact fix → one-line diagnostic TELL). Never merge different bugs into one generic bucket; emit a separate pitfall for each of the ${_examples} cases' classes.\n- "## Verification" — how to confirm green with no regressions.\n- "## Worked examples (real cases)" — catalog ALL ${_examples} real cases compactly: symptom (one line) → exact fix → TELL.\nThe ~70-line cap is LIFTED (target a rich ~120-180 lines); be EXHAUSTIVE on the diverse evidence — that breadth is the whole edge — but stay sectioned + hygienic (no wall of text).`
+    : "";
   // ROBUST extraction — models may prepend reasoning/preamble, wrap in ```fences, or use a
   // "# Title" heading instead of YAML frontmatter. Tolerate all; fall back to the update target.
   const parseDraft = (raw: string): { name: string; description: string; body: string; unsafeName?: string; invalidName?: string } | null => {
@@ -1733,7 +1790,7 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
     isValidSkillName(p.name) && !!p.description && p.description.length >= 20 && lintSkillDraft(p).ok;
 
   // ── Attempt 1, then ONE corrective retry if the draft is malformed for a NON-security reason. ──
-  let raw = (await authorFn(REVIEW_PROMPT, evidence + hint)) || "";
+  let raw = (await authorFn(REVIEW_PROMPT, evidence + hint + depthDirective)) || "";
   try { ensureDir(); writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} ===\n${raw}\n`); } catch { /* */ }
   let parsed = parseDraft(raw);
   if (parsed?.unsafeName) return { action: "reject", reason: `name "${parsed.unsafeName.slice(0, 40)}" has unsafe characters (path/injection)` };
@@ -1741,16 +1798,24 @@ export async function reviewAndAuthor(evidence: string, dirs: string[], authorFn
   if (!parsed) return { action: "none" };
   // Empty shells are not salvageable: repair may fill missing sections, but must not invent a full skill body.
   if (!parsed.body || parsed.body.trim().length < 10) return { action: "reject", reason: "body too thin" };
-  if (!isCleanDraft(parsed)) {
+  // HIGH-DIVERSITY completeness: a diverse-evidence skill MUST carry distinct Pitfalls + a Worked-examples
+  // catalog (the depth that wins pitfalls/concreteness). A Procedure-only draft passes lint but is too thin —
+  // enforce the depth sections via the corrective retry so richness is CONSISTENT across regimes. 2026-06-28.
+  const depthComplete = (b: string) => !_diverse || (/##\s+pitfalls/i.test(b) && /##\s+worked\s+examples/i.test(b));
+  const sotaGaps = sotaQualityGaps(parsed);
+  if (!isCleanDraft(parsed) || !depthComplete(parsed.body) || sotaGaps.length) {
     const why = lintSkillDraft(parsed).issues
       .concat(isValidSkillName(parsed.name) ? [] : ["name must be a class-level lowercase-hyphen slug"])
-      .concat((parsed.description || "").length >= 20 ? [] : ["description too short"]);
-    const corrective = `\n\nYOUR PREVIOUS DRAFT WAS REJECTED (${why.join("; ")}). Re-output ONE complete SKILL.md and NOTHING else: YAML frontmatter with a class-level "name:" (lowercase-hyphen) and a "description:" that STARTS WITH "Use when"; a body that INCLUDES a "## Procedure" section and a "## Verification" section.`;
+      .concat((parsed.description || "").length >= 20 ? [] : ["description too short"])
+      .concat(depthComplete(parsed.body) ? [] : [`HIGH-DIVERSITY skill is MISSING required depth sections (needs both "## Pitfalls" with one entry per distinct class AND "## Worked examples (real cases)" cataloging all ${_examples} cases) — a Procedure-only skill is too thin`])
+      .concat(sotaGaps); // SOTA quality gate — make every skill top-tier, not just valid
+    const corrective = `\n\nYOUR PREVIOUS DRAFT IS NOT YET SOTA (${why.join("; ")}). A top-tier skill ALWAYS has: concrete correct fenced code, a one-line diagnostic TELL on every Pitfall, an explicit safe-first step before any destructive command, and a class-level (not one-off) frame. Re-output ONE complete SKILL.md and NOTHING else, fixing every issue above: YAML frontmatter with a class-level "name:" (lowercase-hyphen) + a "description:" that STARTS WITH "Use when"; a body with "## Procedure", "## Pitfalls" (each with symptom → exact fix → TELL), "## Verification"${_diverse ? ', AND "## Worked examples (real cases)" cataloging every real case' : ""}.`;
     try {
-      const raw2 = (await authorFn(REVIEW_PROMPT, evidence + hint + corrective)) || "";
+      const raw2 = (await authorFn(REVIEW_PROMPT, evidence + hint + depthDirective + corrective)) || "";
       try { writeFileSync(join(STATE_DIR, "reflect-last-raw.txt"), `=== ${new Date().toISOString()} (retry) ===\n${raw2}\n`); } catch { /* */ }
       const p2 = parseDraft(raw2);
-      if (p2 && !p2.unsafeName && isCleanDraft(p2)) { parsed = p2; raw = raw2; }
+      // accept the retry only if it's valid, depth-complete, and NO WORSE on SOTA quality
+      if (p2 && !p2.unsafeName && isCleanDraft(p2) && depthComplete(p2.body) && sotaQualityGaps(p2).length <= sotaGaps.length) { parsed = p2; raw = raw2; }
     } catch { /* keep attempt 1 */ }
   }
   let { name, description, body } = parsed;
@@ -2076,7 +2141,7 @@ export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFra
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
   // v2
-  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig,
+  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills,
   // lifecycle file helpers (for end-to-end manage proof)
   writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG,
   // v5 ENGRAM — CLS loop core (pure)
@@ -2269,6 +2334,19 @@ export default function activate(letta: any) {
           const cov = coverageMap(loadExperience(), scanDirs(ctx));
           const icon = (st: string) => st === "covered" ? "✓" : st === "uncovered" ? "＋" : st === "over-covered" ? "⧉" : "✗";
           return { type: "output", output: cov.length ? cov.map((c) => `${icon(c.status)} [${c.status}] ${c.domain}${c.skill ? ` → ${c.skill}` : ""}`).join("\n") : "(no durable task-classes yet)" };
+        }
+        if (sub === "audit") {
+          // LIBRARY-WIDE SOTA AUDIT (read-only): score EVERY skill (installed/hand-authored/distilled),
+          // not just mm's own — the gate is a pure function. Flags sub-SOTA skills + their exact gaps.
+          const dirs = scanDirs(ctx);
+          const seen = new Set<string>();
+          const skills: Array<{ name: string; description: string; body: string }> = [];
+          for (const d of dirs) for (const n of listSkillNames(d)) { if (seen.has(n)) continue; seen.add(n); try { skills.push({ name: n, description: skillDesc(d, n), body: readSkill(d, n) }); } catch { /* */ } }
+          const r = auditSkills(skills);
+          const pct = r.total ? Math.round((100 * r.clean) / r.total) : 0;
+          const gapline = Object.entries(r.gapCounts).sort((a, b) => b[1] - a[1]).map(([g, c]) => `${g} ×${c}`).join("  ") || "—";
+          const top = r.flagged.slice(0, 20).map((f) => `  ⚠ ${f.name.slice(0, 46).padEnd(48)} ${f.gaps.map((g) => g.split(":")[0]).join(", ")}`).join("\n");
+          return { type: "output", output: `🏅 SOTA library audit — ${r.total} skills · ${r.clean} top-tier (${pct}%) · ${r.flagged.length} to upgrade\ngaps: ${gapline}\n${top}${r.flagged.length > 20 ? `\n  …and ${r.flagged.length - 20} more` : ""}` };
         }
         if (sub === "engram") {
           // The CLS loop, observable (read-only): salience-ranked replay + reverse-replay credit +

@@ -1,0 +1,12 @@
+{
+  "setup": "fair: both skills authored by GLM-5.2 (z.ai). Real Hermes v-installed, its own skill_manager authors/evolves skills across N sessions in isolated HERMES_HOME. Neutral judge = claude (Anthropic), blind A/B, order-swapped (2 orderings avg), 7 axes /70.",
+  "fix": "root cause = dedupeWorked .slice(0,5) cap silently dropped distinct worked-examples (the depth Hermes won on); fix = lift cap to 12 + diversity-scaled depth directive + retry-enforced ## Pitfalls/## Worked-examples sections (consistent richness).",
+  "results_total_/70": {
+    "failing-test single-session": {"mm": 57.0, "hermes": 54.0, "delta_mm": 3.0, "note": "vs Ultron tight hermes artifact"},
+    "failing-test 4-session":      {"mm": 60.5, "hermes": 52.0, "delta_mm": 8.5, "note": "vs fresh hermes (10.4KB)"},
+    "failing-test 8-session":      {"mm": 59.5, "hermes_fresh": 47.0, "delta_mm_fresh": 12.5, "hermes_tight": 54.0, "delta_mm_tight": 5.0},
+    "lint single-session":         {"mm": 56.0, "hermes": 48.0, "delta_mm": 8.0, "note": "vs fresh hermes (7.8KB)"}
+  },
+  "verdict": "mm WINS every regime/class by +3.0 to +12.5. Consistently wins hygiene+safety+pitfalls; matches/trails concreteness by <=1.0. Margin GROWS with sessions because Hermes accumulates/bloats while mm curates (update-first + hygiene discipline).",
+  "honest_caveats": ["single order-swapped judge sample per cell (margins large but not multi-sampled yet)", "fresh hermes accumulated more than Ultron's tight artifacts -> inflates margin via hygiene; conservative 8-session number is +5.0 vs the tight hermes"]
+}
