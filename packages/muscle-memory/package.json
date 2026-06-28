@@ -22,6 +22,7 @@
   },
   "files": [
     "MOD.md",
+    "PUBLISH-PREFLIGHT-SPEC.md",
     "README.md",
     "LICENSE",
     "mods",

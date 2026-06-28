@@ -454,3 +454,26 @@ test("auditSkills: separates SOTA from sub-SOTA across a mixed library", () => {
   expect(r.flagged.some((f) => f.name === "good")).toBe(false);  // SOTA -> clean
   expect(r.flagged.some((f) => f.name === "desc")).toBe(false);  // descriptive -> not held to code bar
 });
+
+// ── publishability preflight (MM_PUBLISH v1): sanitize, hard-block, score, recommend ─────────
+test("publish preflight: sanitizes identifiers (preserving mechanism), hard-blocks secrets, recommends", () => {
+  const { sanitizeForPublish, publishHardBlocks, publishabilityScore, publishPlan } = __mm;
+  const body = "Run against agent-71b0883e-c63f-4e79-bab1 at /Users/kev/proj. Set ZAI_API_KEY.\n```bash\ncurl https://x\n```";
+  const { sanitized, replacements } = sanitizeForPublish(body);
+  expect(sanitized).not.toContain("agent-71b0883e");
+  expect(sanitized).toContain("<agent id>");
+  expect(sanitized).toContain("<local path>");
+  expect(sanitized).toContain("PROVIDER_API_KEY");
+  expect(sanitized).toContain("curl https://x");          // mechanism preserved
+  expect(replacements.length).toBeGreaterThanOrEqual(3);
+
+  const secret = 'token = "' + "sk-" + 'abcdefabcdef1234567890"';
+  expect(publishHardBlocks(secret).length).toBeGreaterThan(0);
+  const blocked = publishabilityScore({ name: "x", description: "Use when something specific happens here", body: secret + "\n## Procedure\n1. x" });
+  expect(blocked.recommended).toBe("block");
+  expect(blocked.score).toBeLessThanOrEqual(15);
+
+  const clean = "## When to use\nWhen a pytest suite fails.\n## Procedure\n```bash\npytest -q\n```\n## Pitfalls\n### 1. Wrong op\nTELL: sign flip. Fix it.\n```python\nreturn a + b\n```\n## Verification\n- green.\n## Anti-bloat\n- retire if 0 uses.";
+  expect(publishabilityScore({ name: "debugging-failing-tests", description: "Use when a pytest suite fails with assertions", body: clean }).recommended).toBe("publish");
+  expect(publishPlan({ name: "s", description: "Use when relevant in this case", body }).recommended).toBe("stage-sanitized");
+});

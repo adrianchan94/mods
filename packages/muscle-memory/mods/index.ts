@@ -816,6 +816,75 @@ export function auditSkills(skills: Array<{ name: string; description?: string; 
   return { total: skills.length, clean: skills.length - flagged.length, flagged, gapCounts };
 }
 
+// ── PUBLISHABILITY PREFLIGHT (MM_PUBLISH v1, 2026-06-28) — the skill SUPPLY CHAIN: a graduated skill is
+// agent-specific scar tissue; a *published* (shared Custom Skills) skill must be portable, private-data-
+// safe, reusable by OTHER agents, and app-visible. This is the bridge "this agent learned" → "the mesh
+// benefits". Pure + deterministic: privacy/portability/quality/reusability/compounding gates → 0-100 +
+// a sanitized preview (swap identifiers, PRESERVE the mechanism/worked-examples) + a recommended action.
+// Hermes authors skills; this manages their distribution. Read/dry-run by default — never auto-publishes.
+
+// Actual secret VALUES — a hard block (a published skill must never carry these, sanitized or not).
+const PUBLISH_SECRET_RES: RegExp[] = [
+  /\bsk-[A-Za-z0-9]{16,}\b/, /\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/, /\bAKIA[0-9A-Z]{16}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\b[A-Z][A-Z0-9_]*_(?:API_)?KEY\s*[:=]\s*['"][A-Za-z0-9_-]{12,}['"]/,
+];
+export function publishHardBlocks(body: string): string[] {
+  const out: string[] = [];
+  for (const re of PUBLISH_SECRET_RES) { const m = body.match(re); if (m) out.push(`secret/credential value present: ${m[0].slice(0, 14)}…`); }
+  return out;
+}
+// Sanitize identifiers → placeholders. Preserves all mechanism/code/worked-examples; only swaps PRIVATE terms.
+export function sanitizeForPublish(body: string): { sanitized: string; replacements: Array<{ kind: string; from: string; to: string }> } {
+  const replacements: Array<{ kind: string; from: string; to: string }> = []; let s = body;
+  const sub = (kind: string, re: RegExp, to: string) => { s = s.replace(re, (m) => { if (!replacements.some((r) => r.from === m)) replacements.push({ kind, from: m, to }); return to; }); };
+  sub("local-path", /\/Users\/[A-Za-z0-9._-]+/g, "<local path>");
+  sub("agent-memfs", /(?:~\/)?\.letta\/(?:lc-local-backend\/memfs\/)?agents?\/[A-Za-z0-9._/-]+/g, "<agent memfs>");
+  sub("agent-id", /\bagent-[a-f0-9]{6,}(?:-[a-f0-9]+)+\b/g, "<agent id>");
+  sub("user", /\b(?:chan2saucy|adrianchan|adrian chan)\b/gi, "<user>");
+  sub("project", /\b(?:IM8|Prenetics)\b/g, "<project>");
+  sub("provider-env", /\b(?:ZAI|Z_AI|OPENAI|ANTHROPIC|GLM|MORPH|KIMI|MINIMAX|GEMINI|XAI)_API_KEY\b/g, "PROVIDER_API_KEY");
+  return { sanitized: s, replacements };
+}
+// 0-100 publishability + the issues that move it. Deterministic; reuses the SOTA gate for quality.
+export function publishabilityScore(skill: { name: string; description: string; body: string }): {
+  score: number; hardBlocks: string[]; issues: Array<{ axis: string; penalty: number; detail: string }>; recommended: "publish" | "stage-sanitized" | "block";
+} {
+  const b = skill.body; const issues: Array<{ axis: string; penalty: number; detail: string }> = [];
+  const hardBlocks = publishHardBlocks(b);
+  const pen = (axis: string, penalty: number, detail: string) => issues.push({ axis, penalty, detail });
+  // PORTABILITY — sanitizable private/local identifiers (publishable only after sanitization)
+  const { replacements } = sanitizeForPublish(b);
+  const kinds = new Set(replacements.map((r) => r.kind));
+  for (const k of kinds) pen("portability", 8, `${k} present (sanitize before publish): e.g. ${replacements.find((r) => r.kind === k)!.from.slice(0, 28)}`);
+  // QUALITY — reuse the SOTA gate + required structure
+  for (const g of sotaQualityGaps(skill)) pen("quality", 10, g.split(":")[0]);
+  for (const [re, label] of [[/##\s+when to use/i, "When to use"], [/##\s+procedure/i, "Procedure"], [/##\s+pitfalls|##\s+failure/i, "Pitfalls"], [/##\s+verification/i, "Verification"]] as Array<[RegExp, string]>)
+    if (!re.test(b)) pen("quality", 8, `missing ## ${label}`);
+  if (!skill.description || skill.description.length < 30) pen("quality", 6, "description too thin for a shared shelf");
+  // REUSABILITY — one-off / no scope guard
+  if (/GENERALITY/.test(sotaQualityGaps(skill).join(" "))) pen("reusability", 10, "reads as a one-off (hardcoded specifics)");
+  if (/(reset --hard|force[- ]?push|rm -rf|drop (table|database)|--force)/i.test(b) && !/(when not to use|do not use|scope|only when|caution)/i.test(b)) pen("reusability", 5, "risky ops without a when-not-to-use / scope guard");
+  // COMPOUNDING — update/retire criteria (does it teach the next agent to keep it healthy?)
+  if (!/(update|patch|retire|prune|absorb|anti-bloat|refine this skill|earn its context)/i.test(b)) pen("compounding", 5, "no update/retire criteria (won't compound across agents)");
+  let score = Math.max(0, 100 - issues.reduce((a, i) => a + i.penalty, 0));
+  if (hardBlocks.length) score = Math.min(score, 15);
+  const sanitizableLeft = kinds.size > 0;
+  const recommended: "publish" | "stage-sanitized" | "block" = hardBlocks.length ? "block" : (score >= 80 && !sanitizableLeft) ? "publish" : "stage-sanitized";
+  return { score, hardBlocks, issues, recommended };
+}
+// Full preflight: the score + a sanitized preview + the recommended action. The V1 product surface.
+export function publishPlan(skill: { name: string; description: string; body: string; shelf?: string }): {
+  skill: string; currentShelf: string; recommendedShelf: string; publishability: number; recommended: string;
+  hardBlocks: string[]; issues: Array<{ axis: string; penalty: number; detail: string }>; sanitizedPreview: string; replacements: Array<{ kind: string; from: string; to: string }>;
+} {
+  const sc = publishabilityScore(skill); const san = sanitizeForPublish(skill.body);
+  return {
+    skill: skill.name, currentShelf: skill.shelf ?? "agent", recommendedShelf: sc.recommended === "block" ? "(blocked — keep agent-local)" : "Custom Skills",
+    publishability: sc.score, recommended: sc.recommended, hardBlocks: sc.hardBlocks, issues: sc.issues,
+    sanitizedPreview: san.sanitized, replacements: san.replacements,
+  };
+}
+
 // — my-add #4 / D: EFFECTIVENESS-DRIVEN RETIREMENT + telemetry aggregation —
 export type LlmSpan = { tokensIn?: number; tokensOut?: number; ms?: number; stop?: string };
 export function aggregateTelemetry(spans: LlmSpan[]): { calls: number; tokensIn: number; tokensOut: number; ms: number } {
@@ -2141,7 +2210,7 @@ export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFra
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
   // v2
-  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills,
+  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan,
   // lifecycle file helpers (for end-to-end manage proof)
   writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG,
   // v5 ENGRAM — CLS loop core (pure)
@@ -2347,6 +2416,22 @@ export default function activate(letta: any) {
           const gapline = Object.entries(r.gapCounts).sort((a, b) => b[1] - a[1]).map(([g, c]) => `${g} ×${c}`).join("  ") || "—";
           const top = r.flagged.slice(0, 20).map((f) => `  ⚠ ${f.name.slice(0, 46).padEnd(48)} ${f.gaps.map((g) => g.split(":")[0]).join(", ")}`).join("\n");
           return { type: "output", output: `🏅 SOTA library audit — ${r.total} skills · ${r.clean} top-tier (${pct}%) · ${r.flagged.length} to upgrade\ngaps: ${gapline}\n${top}${r.flagged.length > 20 ? `\n  …and ${r.flagged.length - 20} more` : ""}` };
+        }
+        if (sub === "publish") {
+          // PUBLISHABILITY PREFLIGHT (dry-run, never auto-publishes): agent skill → sanitized shared
+          // Custom Skill. Scores portability/privacy/quality/reusability/compounding + sanitized preview.
+          const target = String(argv?.[1] || "").trim();
+          if (!target) return { type: "output", output: "usage: /muscle-memory publish <skill-name>  (dry-run preflight — never auto-publishes)" };
+          const dirs = scanDirs(ctx); let found: { dir: string; name: string } | null = null;
+          for (const d of dirs) for (const n of listSkillNames(d)) if (n.toLowerCase() === target.toLowerCase()) { found = { dir: d, name: n }; break; }
+          if (!found) return { type: "output", output: `skill "${target}" not found (try /muscle-memory audit to list)` };
+          const plan = publishPlan({ name: found.name, description: skillDesc(found.dir, found.name), body: readSkill(found.dir, found.name), shelf: "agent" });
+          try { appendUiEvent({ phase: "skill_publish_preflight", summary: `${plan.skill}: publishability ${plan.publishability}/100 → ${plan.recommended}` }); } catch { /* */ }
+          const blocks = plan.hardBlocks.length ? `\n🚫 HARD BLOCKS (never publish): ${plan.hardBlocks.join("; ")}` : "";
+          const issues = plan.issues.length ? plan.issues.map((i) => `  - [${i.axis}] ${i.detail}`).join("\n") : "  (none)";
+          const reps = plan.replacements.length ? `\nsanitize: ${plan.replacements.map((r) => `${r.from.slice(0, 22)} → ${r.to}`).join(", ")}` : "";
+          const act = plan.recommended === "publish" ? "✅ publish as-is (clean)" : plan.recommended === "stage-sanitized" ? "📦 stage SANITIZED publish (review first) — default" : "🚫 block";
+          return { type: "output", output: `🚢 publish preflight — ${plan.skill}\n  ${plan.currentShelf} → ${plan.recommendedShelf}  ·  publishability ${plan.publishability}/100  ·  ${act}${blocks}\nissues:\n${issues}${reps}\n(dry-run — nothing published; review the sanitized preview before staging.)` };
         }
         if (sub === "engram") {
           // The CLS loop, observable (read-only): salience-ranked replay + reverse-replay credit +
