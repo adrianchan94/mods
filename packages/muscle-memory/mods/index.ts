@@ -26,14 +26,14 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-export * from "./core";
-export * from "./detect";
-export * from "./gate";
-export * from "./publish";
-export * from "./engram";
-export * from "./lifecycle";
-export * from "./autopilot";
-export * from "./ui";
+// ── public API — intentional surface, not the whole internals. The mod entry is the default export
+// (activate); `__mm` is the test surface; the rest are the few symbols the test suite imports directly.
+// Everything else stays internal to its module.
+export type { Row } from "./core";
+export type { Defense } from "./engram";
+export { detect, detectRepairChains, isSkillWorthy } from "./detect";
+export { draftWithRepair } from "./gate";
+export { preserveExistingFrontmatterMetadata, isAmbiguousExistingRoute, compareSkillSections } from "./autopilot";
 import { GLOBAL_SKILLS, LOG_PATH, MM, MM_TAG, NEOCORTEX_BLOCK, OUTCOME_PATH, RECEIPTS_DIR, SESSIONS_PATH, STAGED_DIR, STATE_DIR, TELEMETRY_PATH, agentSkillsDir, appendJsonl, appendMeshFeed, appendUiEvent, ensureDir, hash, isManaged, listSkillNames, loadExperience, loadMeshFeed, loadRows, loadUiEvents, readSkill, readUiState, redactFragment, removeSupportFile, renderMeshFeed, scanDirs, scanSkillContent, scanSupportFile, setLivePanel, skillDesc, slug, validateSupportPath, writeSkill, writeSupportFile, writeUiState } from "./core";
 import { buildCrossConversationEvidence, classifyError, commandTemplate, correlateOutcomes, detect, detectAntiPatterns, detectInvocationGotchas, detectRepairChains, detectSequences, detectTemplates, fingerprint, impactScore, inferOutcomes, isDurableLesson, isValidSkillName, maturityScore, mergeOutcomes, stepSig } from "./detect";
 import { auditSkills, buildDiffFragment, candidateDescription, candidateName, crossShelfDuplicates, dedupCheck, draftSkillFromCandidate, draftWithRepair, effectivenessVerdict, findCandidate, lintSkillDraft, repairForCandidate, sotaQualityGaps } from "./gate";
