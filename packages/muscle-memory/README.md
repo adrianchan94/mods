@@ -1,30 +1,57 @@
 # muscle-memory
 
-**A Letta agent that watches itself work and writes its own reusable skills — and gets better every time it updates one.**
+**Every session becomes practice film.**
 
-Claude Code has Hermes (`skill_manage`): it distills skills from *one conversation*. `muscle-memory` brings that to Letta and goes further — it learns from the agent's **whole cross-session history**, recovers failures Letta's runtime silently drops, and **compounds**: updating a learned skill strengthens its proven core instead of overwriting it.
+Built by **Adrian Chan + Kev**. Mack handled heavyweight validation and package-closing assists.
 
-![demo](./demo.gif)
+`muscle-memory` is a Hermes-inspired, Letta-native skill management mod.
 
-> The panel mirrors the loop live: `💾 muscle-memory · 🧭 reviewing` … `✍️ writing skill…` … `graduated 'recovering-from-failing-script-runs'` — then it shows up in `letta skills list` for the agent to reuse. See the whole arc — **creation → graduation → use → refine → prune** — with `npm run demo`.
+It watches a Letta agent's real tool-use, finds reusable procedural lessons, updates existing skills instead of duplicating them, quality-gates drafts, safely stages portable Custom Skills, and prunes stale ones.
+
+**The goal is not just to generate skills — it is to make skill libraries maintain themselves.**
+
+![muscle-memory live demo](./demo.gif)
+
+```txt
+agent work → practice film → reusable skills → safer sharing → better future agents
+```
+
+The first agent earns the lesson. The next agent inherits it.
 
 ---
 
-## The thing nobody else caught
+## What the real logs taught us
 
-We dogfooded this against a **real 503-event Letta Code log** (actual coding sessions). The finding:
+We dogfooded `muscle-memory` against a real 503-event Letta Code log from actual coding sessions.
 
-> **Letta Code (0.27.18) does not emit `tool_end` for `Bash` (or `Task`).** `Bash` is **313 of 503 events — and produces 0 outcomes.**
+The useful finding: Letta gives us enough event tape to build a richer learning layer on top of the harness.
 
-Bash is exactly where real coding fails — failed tests, broken builds, bad commands. So **every memory/observability mod that keys off `tool_end` silently learns _nothing_ from where coding actually breaks.** On that real log, a `tool_end`-only baseline (the shape Mem0 / A-MEM / vanilla Letta use) learns **0 defenses, 0 repair-chains**. The failures are real; they're just invisible.
+In that log, many important coding lessons happened around shell/test runs — failed tests, broken builds, bad commands, then source edits and verification reruns. Those recoveries are easy for humans to see in the sequence, but they are not always represented as a tidy, already-labeled `tool_end` outcome.
 
-`muscle-memory` infers them behaviorally from the action sequence (a verify-command re-run after an edit = a fix-then-recheck). On the same log it recovers **18 failures → 5 repair-chains → 5 defenses** — structure that was invisible to every other approach. That's not a +%; it's `0 → 5`. Failure-learning is *categorically dead* on real Letta agents without this, and we fixed it.
+So `muscle-memory` adds behavioral repair-chain inference:
+
+```txt
+verify command fails
+→ source edit happens
+→ same verify command passes
+= reusable recovery pattern
+```
+
+On the real log, that recovered structure like:
+
+```txt
+18 inferred failures → 5 repair chains → 5 defensive lessons
+```
+
+The point is collaborative: Letta provides the raw game film; `muscle-memory` turns more of that film into coachable tape.
+
+That is the product gap this mod explores.
 
 ---
 
 ## How it works — the brain's memory loop (Complementary Learning Systems)
 
-The named 2026 frontier for agent memory is *memory hygiene* (forget / dedup / rank). That's downstream. Neuroscience says three upstream mechanisms decide **which traces survive and how stored ones change** — and **no shipping agent-memory system implements them**:
+Most agent-memory work focuses on hygiene after capture: forget, dedupe, rank, retrieve. `muscle-memory` adds a complementary layer for procedural skills: decide which traces should survive, when stored skills should change, and what deserves replay.
 
 | brain mechanism | muscle-memory | why it matters |
 |---|---|---|
@@ -32,7 +59,7 @@ The named 2026 frontier for agent memory is *memory hygiene* (forget / dedup / r
 | **synaptic tagging & capture** | a weak one-shot lesson is *rescued* if a salient event fires near it in time | fixes the false-negative that frequency-thresholds cause |
 | **reward-weighted prioritized replay** | sleep-time replays *salience-ranked*, *reverse from the win* (credit assignment), *interleaved* old+new | the right skills get rehearsed; anti-catastrophic-forgetting |
 
-Mapped 1:1 onto Letta's own machinery: `experience.jsonl` = **hippocampus** (fast, decaying) · `SKILL.md` library = **neocortex** (slow, stable) · sleep-time compute = **consolidation** · `permissions` overlay = **enforced defense**. It runs over **real execution traces** using Letta's sleep-time compute and MemFS — the first agent-memory system to run the full CLS loop over procedural memory.
+Mapped onto Letta's own machinery: `experience.jsonl` as fast, decaying experience tape; `SKILL.md` as stable procedural memory; sleep-time/idling as consolidation; and permission hooks as optional defenses. The important bit is practical, not mystical: real execution traces can become better reusable procedures.
 
 ### Compounds truly
 An UPDATE never destroys a proven skill: ambiguous overlap **refuses** an autonomous create (anti-bloat), the model is shown the existing skill and told to **patch, not rewrite**, frontmatter provenance is **preserved**, and a section-level diff makes any destructive rewrite reviewable. Reconsolidation routes a contradicted skill as a *labile UPDATE* — so re-learning **strengthens** the skill instead of spawning a sibling.
@@ -55,16 +82,16 @@ Most tool-use is noise: `ls`, `cat`, the universal edit→run loop. muscle-memor
 
 | check | result |
 |---|---|
-| Unit tests (CLS core + noise-gate + class-generalization + preserve-update + panel + manifest) | **28/28 pass** |
-| Ablation bench vs v4 baseline (5 axes) | **ENGRAM beats baseline on every axis** |
-| Held-out predictive eval, 150 seeds, realistic Bash-heavy corpus | **≈95–100% of *learnable* held-out failures pre-empted vs 0% baseline** (recency 26%); inference precision/recall **100%/100%** on labeled ground truth |
-| Real 503-event Letta log | baseline **0** defenses → muscle-memory **5 defenses + the failures the `tool_end` world can't see** |
-| Full skill lifecycle (deterministic demo, no model) | **creation → graduation → use → refine → prune verified end-to-end** (`npm run demo`) |
-| Live agent, 89-skill library | reflect routed **update-first** (folded 14 signals into an existing skill, no sibling) + pruned — compounding on real data |
+| Unit tests (7 files across core/detect/gate/publish/engram/autopilot/ui) | **41/41 pass** |
+| Ablation bench (5 axes) | ENGRAM beats the v4 baseline on every tested axis |
+| Held-out predictive eval, 150 seeds, realistic Bash-heavy corpus | ≈94% of *learnable* held-out failures pre-empted; inference precision/recall 100%/100% on labeled ground truth |
+| Real 503-event Letta log | behavioral inference recovered 18 failures → 5 repair chains → 5 defensive lessons from ordinary tool-use tape |
+| Full skill lifecycle (deterministic demo, no model) | creation → graduation → use → refine → prune verified end-to-end (`npm run demo`) |
+| Live dogfood library | update-first routing, pruning, publish preflight, and cross-shelf duplicate detection exercised on real agent skills |
 | Generalized distillation, varied real work (python/node/go + ls/cat/git noise) | **one** high-value `recovering-from-failing-script-runs`; **all noise rejected** |
 | Live causal A/B (real agent, answer not in the code) | warm **3.0 tool-calls** vs cold **7.3** → **~2.4× fewer steps**, both succeed |
 
-**Honest scope.** The held-out and real-log numbers are real and reproducible. The 0% baseline is the literal consequence of the `tool_end` gap (not a strawman). The live A/B measures *learning-quality* (steps/tool-calls), not an end-task win-rate; a success-rate causal win is bounded by the secret-redaction invariant (the mod correctly refuses to memorize the unobtainable value). Nothing here is a synthetic-only claim dressed up as production SOTA.
+**Honest scope.** The held-out and real-log numbers are real and reproducible. The baseline comparison is scoped to outcome-labeled events vs behavioral inference on this log. The live A/B measures *learning-quality* (steps/tool-calls), not an end-task win-rate; a success-rate causal win is bounded by the secret-redaction invariant (the mod correctly refuses to memorize the unobtainable value). Nothing here asks you to trust vibes over receipts.
 
 ---
 
