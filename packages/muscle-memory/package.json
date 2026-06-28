@@ -1,7 +1,7 @@
 {
   "name": "@letta-ai/muscle-memory",
   "version": "0.6.0",
-  "description": "A Letta Code mod that lets an agent watch itself work and write its own reusable skills. It runs the full Complementary-Learning-Systems loop (capture -> prediction-error-gated consolidation -> graduate) over its real tool-use, recovers failures the harness silently drops, and compounds: updating a learned skill strengthens its proven core instead of clobbering it.",
+  "description": "A Letta Code mod that watches an agent's real tool-use, distills recurring fixes into quality-gated SKILL.md playbooks, updates existing skills instead of duplicating them, and prunes the ones that don't earn their context — a skill library that maintains itself.",
   "author": "Adrian Chan",
   "license": "MIT",
   "type": "module",
@@ -22,6 +22,7 @@
   },
   "files": [
     "MOD.md",
+    "CHANGELOG.md",
     "PUBLISH-PREFLIGHT-SPEC.md",
     "SOAK-FINDINGS.md",
     "README.md",
