@@ -46,12 +46,28 @@ quality gaps surfaced) — not blind-published.
 - Sanitizes IDENTIFIERS only; never weakens rich worked examples into generic mush.
 - This is **shared Custom Skills / publishability**, not an external marketplace submission.
 
-## NEXT (not built — do not claim as done)
+## V1.1 — SHIPPED (the full supply chain; still no auto-publish, no remote push)
 
-1. **Stage-sanitized write** — write the sanitized skill to a review dir (`pending/publish/`), gated +
-   reversible, emit `skill_publish_staged`.
-2. **Publish** — on explicit approval + score ≥ threshold + no hard blocks, copy to `~/.letta/skills/`,
-   emit existing `skill_published`.
-3. **Fresh-agent visibility receipt** — confirm the published skill appears in `~/.letta/skills` and a
-   fresh agent / `letta skills list` can see it (file/app receipt is enough for v1).
-4. (separate lane) the harness/context-vs-mod auto-router.
+- **Auto-preflight after graduation** — when a skill graduates to the agent shelf, a read-only preflight
+  fires automatically (`skill_publish_preflight`: quality+publishability score · tier · recommended shelf).
+  Never auto-publishes.
+- **`publishTier(plan)`** → `blocked` · `agent-local` · `team-shareable` (Custom-Skills-ready after
+  sanitization) · `marketplace-candidate`.
+- **`findSimilarSkills(name, desc, existing)`** — duplicate check vs shared Custom Skills (exact-name and
+  topic-overlap) → recommends merge/update instead of a duplicate publish.
+- **`/muscle-memory publish stage <skill>`** → `stageSanitizedPublish`: writes the sanitized SKILL.md
+  (identifiers→placeholders, mechanism preserved) + provenance metadata + `PUBLISH-PLAN.json` to
+  `$MM_STATE_DIR/publish-staged/<skill>/`; emits `skill_publish_staged`.
+- **`/muscle-memory publish approve <skill>`** → `approveStagedPublish`: publishes the staged copy to
+  `~/.letta/skills/<skill>/SKILL.md` with provenance frontmatter (`origin: muscle-memory`,
+  `publishability_score`, `tier`, `privacy`, `published_at`); **re-preflights the staged copy and
+  hard-blocks if a secret was injected (tamper guard)**; emits `skill_published`.
+- **Visibility receipt** — `publishVisibilityReceipt` confirms the file exists on the shelf and prints the
+  `/reload` hint (the app/skill index may lag until reload).
+
+All validated end-to-end (stage → approve → on-shelf, sanitized, provenance, tamper-blocked) + regression
+test. `head-to-head/effectiveness/` and the package tests cover it.
+
+## NEXT (roadmap — not built, not claimed)
+- The harness/context-vs-mod auto-router (separate lane).
+- `letta skills list` live-index confirmation (currently file-on-disk + `/reload` hint).

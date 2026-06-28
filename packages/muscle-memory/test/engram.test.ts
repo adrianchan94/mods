@@ -6,6 +6,7 @@ import { __mm } from "../mods/index";
 import type { Row, Defense } from "../mods/index";
 import { preserveExistingFrontmatterMetadata, isAmbiguousExistingRoute, compareSkillSections } from "../mods/index";
 import { detect, detectRepairChains, draftWithRepair, isSkillWorthy } from "../mods/index";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"; import { tmpdir } from "node:os"; import { join as _join } from "node:path";
 
 const {
   tagExperience, predictionError, captureTagged, labileSkills, skillRetrieved,
@@ -502,4 +503,30 @@ test("robustness: pure surfaces never throw on adversarial input", () => {
   expect(() => M.auditSkills([])).not.toThrow();
   expect(() => M.sanitizeForPublish("agent-abc12345-de\n".repeat(1000))).not.toThrow();
   expect(() => M.candidateName({ key: "<<>>||&&!!", kind: "template", count: 5, convs: 2, fixes: 1, maturity: 5 })).not.toThrow();
+});
+
+// ── MM_PUBLISH v1.1 supply chain: tier → dedup → stage(sanitized+meta) → approve(shelf) → tamper-guard ─
+test("publish supply chain: tier/dedup/stage/approve/visibility/tamper-guard", () => {
+  const M = __mm;
+  expect(M.publishTier({ publishability: 90, hardBlocks: [], replacements: [] })).toBe("marketplace-candidate");
+  expect(M.publishTier({ publishability: 70, hardBlocks: [], replacements: [{ kind: "agent-id" }] })).toBe("team-shareable");
+  expect(M.publishTier({ publishability: 90, hardBlocks: ["x"], replacements: [] })).toBe("blocked");
+  expect(M.findSimilarSkills("a-b-c", "d", [{ name: "a-b-c", description: "x" }]).some((d) => d.why.includes("exact"))).toBe(true);
+
+  const g = mkdtempSync(tmpdir() + "/mm-pub-");
+  const nm = "zz-pub-test-" + Date.now();
+  const desc = "Use when testing the publish supply chain end to end";
+  const body = "---\nname: " + nm + "\ndescription: " + desc + "\n---\n## Procedure\n1. hit agent-71b0883e-c63f-4e79-bab1\n```bash\necho hi\n```\n## Pitfalls\n### 1. y\nTELL: z. Fix it.\n## Verification\n- ok.";
+  const st = M.stageSanitizedPublish({ name: nm, description: desc, body });
+  expect(st.staged).toBe(true);
+  const ap = M.approveStagedPublish(nm, g);
+  expect(ap.published).toBe(true);
+  const pub = readFileSync(ap.path, "utf8");
+  expect(pub).not.toContain("agent-71b0883e");        // sanitized identifiers
+  expect(pub).toContain("origin: muscle-memory");      // provenance metadata
+  expect(M.publishVisibilityReceipt(nm, g).exists).toBe(true);
+  // tamper guard: a secret injected into the staged copy must block re-approve
+  const staged = _join(st.dir, "SKILL.md");
+  writeFileSync(staged, readFileSync(staged, "utf8") + '\nkey="' + "sk-" + 'abcd1234567890abcdef"');
+  expect(M.approveStagedPublish(nm, mkdtempSync(tmpdir() + "/mm-g2-")).published).toBe(false);
 });

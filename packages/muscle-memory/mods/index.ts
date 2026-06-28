@@ -885,6 +885,66 @@ export function publishPlan(skill: { name: string; description: string; body: st
   };
 }
 
+// ── MM_PUBLISH v1.1: the SUPPLY CHAIN — graduated agent skill → publishability preflight → staged
+// sanitized Custom Skill → approved publish → visibility receipt. No auto-publish; sanitize identifiers
+// (not mechanisms); dedup-aware; tiered. Closes "this agent learned" → "the mesh reuses it". (2026-06-28)
+const PUBLISH_STAGED_DIR = join(STATE_DIR, "publish-staged");
+export type PublishTier = "blocked" | "agent-local" | "team-shareable" | "marketplace-candidate";
+// Tiered recommendation label.
+export function publishTier(plan: { publishability: number; hardBlocks: string[]; replacements: Array<{ kind: string }> }): PublishTier {
+  if (plan.hardBlocks.length) return "blocked";
+  const sanitizable = plan.replacements.length > 0;
+  if (plan.publishability >= 85 && !sanitizable) return "marketplace-candidate";
+  if (plan.publishability >= 65) return "team-shareable";
+  return "agent-local";
+}
+// Sanitized provenance metadata to embed on publish (NO raw ids/user/paths).
+export function publishMetadata(plan: { publishability: number; replacements: Array<{ kind: string }> }, tier: string): Record<string, string | number> {
+  return { origin: "muscle-memory", publishability_score: plan.publishability, tier, privacy: plan.replacements.length ? "sanitized" : "as-is", published_at: new Date().toISOString().slice(0, 10) };
+}
+// Duplicate check: close name/description matches among existing Custom Skills → recommend update/merge, not duplicate.
+export function findSimilarSkills(name: string, description: string, existing: Array<{ name: string; description: string }>): Array<{ name: string; why: string }> {
+  const toks = (s: string) => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3 && !SEARCH_STOP.has(t)));
+  const nT = toks(`${name} ${description}`); const out: Array<{ name: string; why: string }> = [];
+  for (const e of existing) {
+    if (e.name === name) { out.push({ name: e.name, why: "exact name match — update it, don't duplicate" }); continue; }
+    const eT = toks(`${e.name} ${e.description}`); let shared = 0; for (const t of nT) if (eT.has(t)) shared++;
+    const overlap = shared / Math.max(1, Math.min(nT.size, eT.size));
+    if (overlap >= 0.5 && shared >= 3) out.push({ name: e.name, why: `${Math.round(overlap * 100)}% topic overlap — consider merge/update` });
+  }
+  return out.slice(0, 3);
+}
+// Stage a SANITIZED publish to the review dir: writes SKILL.md (sanitized + metadata) + PUBLISH-PLAN.json. Never publishes.
+export function stageSanitizedPublish(skill: { name: string; description: string; body: string; shelf?: string }): { staged: boolean; dir: string; plan: ReturnType<typeof publishPlan>; tier: PublishTier; reason?: string } {
+  const plan = publishPlan(skill); const tier = publishTier(plan);
+  if (plan.hardBlocks.length) return { staged: false, dir: "", plan, tier, reason: `blocked: ${plan.hardBlocks.join("; ")}` };
+  const dir = join(PUBLISH_STAGED_DIR, slug(skill.name)); try { mkdirSync(dir, { recursive: true }); } catch { /* */ }
+  const meta = publishMetadata(plan, tier);
+  const body = /^---\n[\s\S]*?\n---/.test(plan.sanitizedPreview)
+    ? plan.sanitizedPreview.replace(/^---\n([\s\S]*?)\n---/, (_m, fm) => `---\n${fm.replace(/\n+$/, "")}\n${Object.entries(meta).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---`)
+    : `---\nname: ${skill.name}\ndescription: ${skill.description}\n${Object.entries(meta).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${plan.sanitizedPreview}`;
+  writeFileSync(join(dir, "SKILL.md"), body);
+  writeFileSync(join(dir, "PUBLISH-PLAN.json"), JSON.stringify({ skill: skill.name, tier, publishability: plan.publishability, recommended: plan.recommended, issues: plan.issues, replacements: plan.replacements, metadata: meta, staged_at: Date.now() }, null, 2));
+  return { staged: true, dir, plan, tier };
+}
+// Approve: publish the STAGED sanitized copy to the global Custom Skills shelf. Re-preflights the staged
+// copy (hard-block if it now carries secrets — guards tampering). Emits caller-side skill_published. No remote push.
+export function approveStagedPublish(name: string, globalDir: string): { published: boolean; path?: string; reason?: string } {
+  const staged = join(PUBLISH_STAGED_DIR, slug(name), "SKILL.md");
+  if (!existsSync(staged)) return { published: false, reason: "no staged copy — run `publish stage <skill>` first" };
+  const body = readFileSync(staged, "utf8");
+  const hb = publishHardBlocks(body); if (hb.length) return { published: false, reason: `hard block on staged copy: ${hb.join("; ")}` };
+  const sec = scanSkillContent(body); if (!sec.ok) return { published: false, reason: `security: ${sec.issues.join("; ")}` };
+  const dst = join(globalDir, slug(name)); try { mkdirSync(dst, { recursive: true }); } catch { /* */ }
+  writeFileSync(join(dst, "SKILL.md"), body);
+  return { published: true, path: join(dst, "SKILL.md") };
+}
+// Visibility receipt: prove the published file exists; hint /reload for the app/skill index.
+export function publishVisibilityReceipt(name: string, globalDir: string): { exists: boolean; path: string; reloadHint: string } {
+  const p = join(globalDir, slug(name), "SKILL.md");
+  return { exists: existsSync(p), path: p, reloadHint: "run /reload (or restart the agent) so the skill index surfaces the new Custom Skill" };
+}
+
 // — my-add #4 / D: EFFECTIVENESS-DRIVEN RETIREMENT + telemetry aggregation —
 export type LlmSpan = { tokensIn?: number; tokensOut?: number; ms?: number; stop?: string };
 export function aggregateTelemetry(spans: LlmSpan[]): { calls: number; tokensIn: number; tokensOut: number; ms: number } {
@@ -2075,6 +2135,10 @@ function graduateStagedSkill(name: string, ctx?: any): string {
   appendUiEvent({ phase: "skill_graduated", summary: `graduated '${nm}'`, skill: nm, action: "graduate", route: "manual" });
   appendMeshFeed({ type: "skill_graduated", skill: nm, route: "GRADUATE", signals: 0 });
   writeUiState({ phase: "done", last: `graduated '${nm}'`, route: "GRADUATE · live" });
+  // MM_PUBLISH v1.1: auto-run the publishability preflight right after graduation (READ-ONLY — never
+  // auto-publishes). Surfaces quality+publishability score, tier, and the recommended shelf so a good
+  // skill can be promoted to shared Custom Skills without manual babysitting. Best-effort, never breaks graduation.
+  try { const _b = readSkill(dstRoot, nm); if (_b) { const _p = publishPlan({ name: nm, description: skillDesc(dstRoot, nm), body: _b, shelf: "agent" }); appendUiEvent({ phase: "skill_publish_preflight", summary: `${nm}: ${_p.publishability}/100 · tier=${publishTier(_p)} · ${_p.recommended}`, skill: nm, route: "auto-after-graduate" }); } } catch { /* preflight must never break graduation */ }
   return dst;
 }
 
@@ -2214,7 +2278,7 @@ export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFra
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
   // v2
-  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan,
+  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan, publishTier, publishMetadata, findSimilarSkills, stageSanitizedPublish, approveStagedPublish, publishVisibilityReceipt,
   // lifecycle file helpers (for end-to-end manage proof)
   writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG,
   // v5 ENGRAM — CLS loop core (pure)
@@ -2422,20 +2486,40 @@ export default function activate(letta: any) {
           return { type: "output", output: `🏅 SOTA library audit — ${r.total} skills · ${r.clean} top-tier (${pct}%) · ${r.flagged.length} to upgrade\ngaps: ${gapline}\n${top}${r.flagged.length > 20 ? `\n  …and ${r.flagged.length - 20} more` : ""}` };
         }
         if (sub === "publish") {
-          // PUBLISHABILITY PREFLIGHT (dry-run, never auto-publishes): agent skill → sanitized shared
-          // Custom Skill. Scores portability/privacy/quality/reusability/compounding + sanitized preview.
-          const target = String(argv?.[1] || "").trim();
-          if (!target) return { type: "output", output: "usage: /muscle-memory publish <skill-name>  (dry-run preflight — never auto-publishes)" };
+          // SUPPLY CHAIN: preflight (default) → stage (sanitized review copy) → approve (publish to Custom
+          // Skills). NEVER auto-publishes; sanitizes identifiers only; dedup-aware; tiered.
+          const v1 = String(argv?.[1] || "").toLowerCase();
+          const action = (v1 === "stage" || v1 === "approve") ? v1 : "preflight";
+          const target = String((action === "preflight" ? argv?.[1] : argv?.[2]) || "").trim();
+          if (!target) return { type: "output", output: "usage: /muscle-memory publish <skill> | publish stage <skill> | publish approve <skill>  (never auto-publishes)" };
           const dirs = scanDirs(ctx); let found: { dir: string; name: string } | null = null;
           for (const d of dirs) for (const n of listSkillNames(d)) if (n.toLowerCase() === target.toLowerCase()) { found = { dir: d, name: n }; break; }
+          if (action === "approve") {
+            const res = approveStagedPublish(target, GLOBAL_SKILLS);
+            if (!res.published) return { type: "output", output: `🚫 not published — ${res.reason}` };
+            try { appendUiEvent({ phase: "skill_published", summary: `published '${target}' to Custom Skills`, skill: target, action: "publish" }); appendMeshFeed({ type: "skill_published", skill: target, route: "PUBLISH", signals: 0 }); } catch { /* */ }
+            const vis = publishVisibilityReceipt(target, GLOBAL_SKILLS);
+            return { type: "output", output: `✅ published — ${res.path}\n  visible on disk: ${vis.exists ? "yes ✓" : "NO ❌"}  ·  ${vis.reloadHint}` };
+          }
           if (!found) return { type: "output", output: `skill "${target}" not found (try /muscle-memory audit to list)` };
-          const plan = publishPlan({ name: found.name, description: skillDesc(found.dir, found.name), body: readSkill(found.dir, found.name), shelf: "agent" });
-          try { appendUiEvent({ phase: "skill_publish_preflight", summary: `${plan.skill}: publishability ${plan.publishability}/100 → ${plan.recommended}` }); } catch { /* */ }
+          const skill = { name: found.name, description: skillDesc(found.dir, found.name), body: readSkill(found.dir, found.name), shelf: "agent" };
+          const plan = publishPlan(skill); const tier = publishTier(plan);
+          const existing = listSkillNames(GLOBAL_SKILLS).filter((n) => n !== found!.name).map((n) => ({ name: n, description: skillDesc(GLOBAL_SKILLS, n) }));
+          const dups = findSimilarSkills(found.name, skill.description, existing);
+          if (action === "stage") {
+            const st = stageSanitizedPublish(skill);
+            if (!st.staged) return { type: "output", output: `🚫 not staged — ${st.reason}` };
+            try { appendUiEvent({ phase: "skill_publish_staged", summary: `staged '${found.name}' (tier=${st.tier}, ${plan.publishability}/100)`, skill: found.name, action: "stage" }); } catch { /* */ }
+            const dupline = dups.length ? `\n⚠ similar Custom Skills: ${dups.map((d) => `${d.name} (${d.why})`).join("; ")}` : "";
+            return { type: "output", output: `📦 staged SANITIZED publish — ${found.name}\n  ${st.dir}/SKILL.md  +  PUBLISH-PLAN.json\n  tier: ${st.tier}  ·  publishability ${plan.publishability}/100${dupline}\n  next: review the sanitized SKILL.md, then \`/muscle-memory publish approve ${found.name}\`` };
+          }
+          try { appendUiEvent({ phase: "skill_publish_preflight", summary: `${plan.skill}: ${plan.publishability}/100 · tier=${tier} · ${plan.recommended}`, skill: found.name }); } catch { /* */ }
           const blocks = plan.hardBlocks.length ? `\n🚫 HARD BLOCKS (never publish): ${plan.hardBlocks.join("; ")}` : "";
           const issues = plan.issues.length ? plan.issues.map((i) => `  - [${i.axis}] ${i.detail}`).join("\n") : "  (none)";
           const reps = plan.replacements.length ? `\nsanitize: ${plan.replacements.map((r) => `${r.from.slice(0, 22)} → ${r.to}`).join(", ")}` : "";
-          const act = plan.recommended === "publish" ? "✅ publish as-is (clean)" : plan.recommended === "stage-sanitized" ? "📦 stage SANITIZED publish (review first) — default" : "🚫 block";
-          return { type: "output", output: `🚢 publish preflight — ${plan.skill}\n  ${plan.currentShelf} → ${plan.recommendedShelf}  ·  publishability ${plan.publishability}/100  ·  ${act}${blocks}\nissues:\n${issues}${reps}\n(dry-run — nothing published; review the sanitized preview before staging.)` };
+          const dupline = dups.length ? `\n⚠ similar Custom Skills (consider merge/update): ${dups.map((d) => d.name).join(", ")}` : "";
+          const act = plan.recommended === "publish" ? "✅ publish as-is (clean)" : plan.recommended === "stage-sanitized" ? "📦 stage SANITIZED (run `publish stage`)" : "🚫 block";
+          return { type: "output", output: `🚢 publish preflight — ${plan.skill}\n  ${plan.currentShelf} → ${plan.recommendedShelf}  ·  tier: ${tier}  ·  publishability ${plan.publishability}/100  ·  ${act}${blocks}\nissues:\n${issues}${reps}${dupline}\n(dry-run — nothing published.)` };
         }
         if (sub === "engram") {
           // The CLS loop, observable (read-only): salience-ranked replay + reverse-replay credit +
