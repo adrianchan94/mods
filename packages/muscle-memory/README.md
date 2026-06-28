@@ -104,7 +104,7 @@ Then just work. It captures your tool-use, and at sleep-time / session-close it 
 ## Verify it yourself
 
 ```bash
-npm run verify   # transpile + 28 unit tests + 5-axis bench + 150-seed eval + full-lifecycle demo
+npm run verify   # transpile + 39 unit tests + 5-axis bench + 150-seed eval + full-lifecycle demo
 ```
 
 Single-file mod (`mods/index.ts`), no runtime deps beyond Node builtins. MIT.

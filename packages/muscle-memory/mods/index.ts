@@ -1670,6 +1670,8 @@ export async function runAutopilot(ctx: any, config?: AutopilotConfig): Promise<
     appendUiEvent({ phase: g ? "skill_graduated" : "skill_staged", summary, skill: g || s, action: g ? "graduate" : "stage", route: "autopilot" });
     writeUiState({ phase: "done", last: summary, route: `AUTOPILOT · ${g ? "graduate" : "stage"}` });
     for (const n of result.graduated) appendMeshFeed({ type: "skill_graduated", skill: n, route: "AUTOPILOT", signals: 0 });
+    // v1.1 parity: auto publishability preflight (read-only) on AUTOPILOT graduation too, not just manual.
+    for (const n of result.graduated) { try { const _d = agentSkillsDir(ctx); const _b = readSkill(_d, n); if (_b) { const _p = publishPlan({ name: n, description: skillDesc(_d, n), body: _b, shelf: "agent" }); appendUiEvent({ phase: "skill_publish_preflight", summary: `${n}: ${_p.publishability}/100 · tier=${publishTier(_p)} · ${_p.recommended}`, skill: n, route: "auto-after-graduate" }); } } catch { /* preflight must never break autopilot */ } }
   }
   // OPT-IN promotion (MM_PUBLISH=auto): copy freshly-graduated skills to the shared shelf
   // (~/.letta/skills) so they appear under the app's Custom Skills, reusable for ALL agents.
