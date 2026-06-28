@@ -530,3 +530,16 @@ test("publish supply chain: tier/dedup/stage/approve/visibility/tamper-guard", (
   writeFileSync(staged, readFileSync(staged, "utf8") + '\nkey="' + "sk-" + 'abcd1234567890abcdef"');
   expect(M.approveStagedPublish(nm, mkdtempSync(tmpdir() + "/mm-g2-")).published).toBe(false);
 });
+
+// ── live visibility: liveSkillVisible degrades gracefully (never throws / never false-claims) ─
+test("liveSkillVisible: graceful fallback with no/invalid agent (never throws, never claims false visibility)", () => {
+  const M = __mm;
+  const noAgent = M.liveSkillVisible("some-skill");
+  expect(noAgent.checked).toBe(false);
+  expect(noAgent.visible).toBe(false);
+  expect(noAgent.note).toMatch(/reload/i);
+  // an invalid agent id must fail gracefully (letta errors → caught), not throw or claim visibility
+  const bad = M.liveSkillVisible("some-skill", "definitely-not-a-real-agent-id-zzz");
+  expect(bad.visible).toBe(false);
+  expect(typeof bad.note).toBe("string");
+});

@@ -25,6 +25,7 @@ import { appendFileSync, mkdirSync, readFileSync, existsSync, writeFileSync, rea
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 const STATE_DIR = process.env.MM_STATE_DIR || join(homedir(), ".letta", "muscle-memory");
 const LOG_PATH = join(STATE_DIR, "experience.jsonl");
@@ -943,6 +944,18 @@ export function approveStagedPublish(name: string, globalDir: string): { publish
 export function publishVisibilityReceipt(name: string, globalDir: string): { exists: boolean; path: string; reloadHint: string } {
   const p = join(globalDir, slug(name), "SKILL.md");
   return { exists: existsSync(p), path: p, reloadHint: "run /reload (or restart the agent) so the skill index surfaces the new Custom Skill" };
+}
+// LIVE-INDEX confirmation (best-effort): actually query `letta skills list` to prove the agent SEES the
+// published skill, not just that the file is on disk. Graceful: any failure (no agent context, locked
+// memfs, index lag) falls back to the honest "on disk — /reload to surface" — never claims false visibility.
+export function liveSkillVisible(name: string, agentId?: string): { checked: boolean; visible: boolean; note: string } {
+  const onDisk = "on disk on the Custom Skills shelf — run /reload to load it into the live skill index";
+  if (!agentId) return { checked: false, visible: false, note: onDisk };
+  try {
+    const out = execFileSync("letta", ["skills", "list", "--agent", agentId], { encoding: "utf8", timeout: 15000, stdio: ["ignore", "pipe", "ignore"] });
+    const visible = out.split(/\r?\n/).some((l) => l.includes(name));
+    return { checked: true, visible, note: visible ? "✓ confirmed live: the agent's skill index now lists it" : `${onDisk} (not in the live index yet)` };
+  } catch { return { checked: false, visible: false, note: `${onDisk} (live index query unavailable)` }; }
 }
 
 // — my-add #4 / D: EFFECTIVENESS-DRIVEN RETIREMENT + telemetry aggregation —
@@ -2280,7 +2293,7 @@ export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFra
   autopilotPlan, executeAutopilotPlan, AUTOPILOT_DEFAULT, managedView, forkAuthor,
   scanSkillContent, scanSupportFile, validateSupportPath, writeSupportFile, removeSupportFile, restoreManagedSkill,
   // v2
-  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan, publishTier, publishMetadata, findSimilarSkills, stageSanitizedPublish, approveStagedPublish, publishVisibilityReceipt,
+  classifyError, mergeOutcomes, correlateOutcomes, inferOutcomes, detectInvocationGotchas, loadExperience, detectRepairChains, detectAntiPatterns, impactScore, lintSkillDraft, aggregateTelemetry, effectivenessVerdict, draftWithRepair, stepSig, sotaQualityGaps, auditSkills, publishabilityScore, sanitizeForPublish, publishHardBlocks, publishPlan, publishTier, publishMetadata, findSimilarSkills, stageSanitizedPublish, approveStagedPublish, publishVisibilityReceipt, liveSkillVisible,
   // lifecycle file helpers (for end-to-end manage proof)
   writeSkill, isManaged, listSkillNames, readSkill, retireManagedSkill, agentSkillsDir, scanDirs, MM_TAG,
   // v5 ENGRAM — CLS loop core (pure)
@@ -2501,7 +2514,8 @@ export default function activate(letta: any) {
             if (!res.published) return { type: "output", output: `🚫 not published — ${res.reason}` };
             try { appendUiEvent({ phase: "skill_published", summary: `published '${target}' to Custom Skills`, skill: target, action: "publish" }); appendMeshFeed({ type: "skill_published", skill: target, route: "PUBLISH", signals: 0 }); } catch { /* */ }
             const vis = publishVisibilityReceipt(target, GLOBAL_SKILLS);
-            return { type: "output", output: `✅ published — ${res.path}\n  visible on disk: ${vis.exists ? "yes ✓" : "NO ❌"}  ·  ${vis.reloadHint}` };
+            const live = liveSkillVisible(slug(target), ctx?.agent?.id || ctx?.agentId);
+            return { type: "output", output: `✅ published — ${res.path}\n  on disk: ${vis.exists ? "yes ✓" : "NO ❌"}\n  live index: ${live.checked ? (live.visible ? "✓ visible to the agent now" : "not loaded yet") : "not queried"}  ·  ${live.note}` };
           }
           if (!found) return { type: "output", output: `skill "${target}" not found (try /muscle-memory audit to list)` };
           const skill = { name: found.name, description: skillDesc(found.dir, found.name), body: readSkill(found.dir, found.name), shelf: "agent" };

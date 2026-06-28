@@ -70,4 +70,3 @@ test. `head-to-head/effectiveness/` and the package tests cover it.
 
 ## NEXT (roadmap — not built, not claimed)
 - The harness/context-vs-mod auto-router (separate lane).
-- `letta skills list` live-index confirmation (currently file-on-disk + `/reload` hint).
