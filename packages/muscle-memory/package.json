@@ -53,7 +53,7 @@
     }
   },
   "scripts": {
-    "test": "bun test test/engram.test.ts",
+    "test": "bun test test/",
     "bench": "bun run test/engram.bench.ts",
     "eval": "bun run test/engram.eval.ts",
     "demo": "bun run test/engram.demo.ts",
