@@ -490,3 +490,16 @@ test("scanSkillContent: blocks secrets/exfil/pipe-to-shell, ALLOWS legit git/des
   expect(scanSkillContent("## Procedure\n```bash\n" + fpush + "\n```").ok).toBe(true);
   expect(scanSkillContent("git " + "reset " + "--" + "hard origin/main").ok).toBe(true);
 });
+
+// ── robustness: the mod must never crash on empty / malformed / huge / weird input ───────────
+test("robustness: pure surfaces never throw on adversarial input", () => {
+  const M = __mm;
+  expect(() => M.buildCrossConversationEvidence([])).not.toThrow();
+  expect(() => M.buildCrossConversationEvidence([{}, { tool: null }, { conv: 1, ok: "x" }])).not.toThrow();
+  expect(() => M.buildCrossConversationEvidence(Array.from({ length: 3000 }, (_, i) => ({ conv: `c${i % 40}`, tool: "Bash", tmpl: "x", ok: i % 3 === 0, h: `${i}` })))).not.toThrow();
+  expect(() => M.sotaQualityGaps({ name: "x", description: "", body: "" })).not.toThrow();
+  expect(() => M.sotaQualityGaps({ name: "x", description: "d", body: "## Procedure\n\u0000\uFFFD" })).not.toThrow();
+  expect(() => M.auditSkills([])).not.toThrow();
+  expect(() => M.sanitizeForPublish("agent-abc12345-de\n".repeat(1000))).not.toThrow();
+  expect(() => M.candidateName({ key: "<<>>||&&!!", kind: "template", count: 5, convs: 2, fixes: 1, maturity: 5 })).not.toThrow();
+});
