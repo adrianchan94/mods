@@ -1,7 +1,7 @@
 // muscle-memory · engram module (split from index.ts — behavior-preserving).
 import { join } from "node:path";
 import { NEOCORTEX_BLOCK, Row } from "./core";
-import { HIGH_SIGNAL_TOOL_SET, detectAntiPatterns, detectInvocationGotchas, detectRepairChains, fingerprint, stepSig } from "./detect";
+import { HIGH_SIGNAL_TOOL_SET, detectAntiPatterns, detectInvocationGotchas, detectRepairChains, fingerprint, isValidSkillName, stepSig } from "./detect";
 import { skillVerbs } from "./lifecycle";
 
 
@@ -322,4 +322,71 @@ export async function archivePassage(client: unknown, agentId: string | null | u
   const create = reachFn(client, ["agents", "passages", "create"]); // client.agents.passages.create(agentId, body)
   if (!create) return false;
   try { await create(agentId, { text, tags }); return true; } catch { return false; }
+}
+
+
+// ── E4 · SEMANTIC SKILL ROUTING (opt-in: MM_NATIVE has "passages") ───────────────────────────
+// The skill index lives as tagged archival passages; routing recall becomes an embedding search
+// (client.agents.passages.search) instead of token overlap. Search results carry rank order but
+// no absolute score, so semantic evidence is RECALL ONLY — the deterministic lexical gates
+// (pickUpdateTarget / isAmbiguousExistingRoute) keep precision. Everything here is best-effort
+// and never throws; with MM_NATIVE unset every function is a cheap no-op.
+
+export type SemanticSkillHit = { name: string; rank: number };
+
+export const SKILL_PASSAGE_TAG = "mm:skill";
+
+export function skillPassageTag(name: string): string { return `${SKILL_PASSAGE_TAG}:${name}`; }
+
+/** One passage per managed skill: name line + squashed description (embedding food). Pure. */
+export function skillPassageText(name: string, description: string): string {
+  return `skill: ${name}\n${String(description || "").replace(/\s+/g, " ").slice(0, 500)}`;
+}
+
+/** Parse passages.search results into ordered skill hits. Pure over an unknown response. */
+export function parseSkillHits(resp: unknown): SemanticSkillHit[] {
+  if (!resp || typeof resp !== "object" || !("results" in resp) || !Array.isArray(resp.results)) return [];
+  const out: SemanticSkillHit[] = [];
+  for (const r of resp.results) {
+    if (!r || typeof r !== "object") continue;
+    const tags = "tags" in r && Array.isArray(r.tags) ? r.tags : [];
+    const named = tags.find((t): t is string => typeof t === "string" && t.startsWith(`${SKILL_PASSAGE_TAG}:`));
+    let name = named ? named.slice(SKILL_PASSAGE_TAG.length + 1) : "";
+    if (!name && "content" in r && typeof r.content === "string") name = r.content.match(/^skill:\s*([a-z0-9-]+)/i)?.[1] ?? "";
+    if (name && isValidSkillName(name) && !out.some((h) => h.name === name)) out.push({ name, rank: out.length });
+  }
+  return out;
+}
+
+/** Semantic routing recall: embedding-search the mm:skill passage index. Opt-in, never throws. */
+export async function semanticSkillCandidates(client: unknown, agentId: string | null | undefined, query: string, k = 3): Promise<SemanticSkillHit[]> {
+  if (!agentId || !nativeEnabled("passages") || !query.trim()) return [];
+  const search = reachFn(client, ["agents", "passages", "search"]); // client.agents.passages.search(agentId, params)
+  if (!search) return [];
+  try {
+    return parseSkillHits(await search(agentId, { query: query.slice(0, 4000), tags: [SKILL_PASSAGE_TAG], tag_match_mode: "all", top_k: k }));
+  } catch { return []; }
+}
+
+/** Upsert the mm:skill passage index (delete-by-tag then create — the API has no update). Opt-in, never throws. */
+export async function syncSkillPassages(client: unknown, agentId: string | null | undefined, managed: Array<{ name: string; description: string }>): Promise<number> {
+  if (!agentId || !nativeEnabled("passages") || !managed.length) return 0;
+  const search = reachFn(client, ["agents", "passages", "search"]);
+  const create = reachFn(client, ["agents", "passages", "create"]);
+  const del = reachFn(client, ["agents", "passages", "delete"]);
+  if (!create) return 0;
+  let synced = 0;
+  for (const m of managed) {
+    try {
+      if (search && del) {
+        const prior: unknown = await search(agentId, { query: m.name, tags: [skillPassageTag(m.name)], tag_match_mode: "all", top_k: 5 });
+        if (prior && typeof prior === "object" && "results" in prior && Array.isArray(prior.results)) {
+          for (const r of prior.results) { if (r && typeof r === "object" && "id" in r && typeof r.id === "string") await del(r.id, { agent_id: agentId }); }
+        }
+      }
+      await create(agentId, { text: skillPassageText(m.name, m.description), tags: [SKILL_PASSAGE_TAG, skillPassageTag(m.name)] });
+      synced++;
+    } catch { /* best-effort per skill — a failed sync never blocks the lifecycle */ }
+  }
+  return synced;
 }

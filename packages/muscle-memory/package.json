@@ -32,7 +32,8 @@
     "build": "bun build mods/index.ts --target node --outfile mods/index.bundled.mjs",
     "transpile": "bun build mods/index.ts --target node --outfile /tmp/muscle-memory.build.js",
     "prepublishOnly": "npm run build",
-    "verify": "npm run build && npm run test"
+    "eval:routing": "bun test/routing.eval.ts",
+    "verify": "npm run build && npm run test && npm run eval:routing"
   },
   "engines": {
     "node": ">=20"

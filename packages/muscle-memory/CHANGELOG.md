@@ -5,6 +5,24 @@ All notable changes to `@letta-ai/muscle-memory`. Format loosely follows [Keep a
 ## [Unreleased]
 
 ### Added
+- **E4 · Semantic routing (hybrid recall/precision, opt-in `MM_NATIVE=passages`)** — the managed-skill
+  index is mirrored into Letta archival memory as `mm:skill`-tagged passages (`syncSkillPassages`,
+  refreshed at `conversation_close`), and update-first routing gains an embedding-search recall lane
+  (`semanticSkillCandidates` → `client.agents.passages.search`). Embedding results carry rank order but
+  no absolute score, so semantic evidence can only (a) **boost** a candidate the lexical scorer already
+  found distinctive overlap for (`SEMANTIC_RANK_BONUS`, corroboration — a boost alone can never route an
+  update), or (b) **park** an autonomous CREATE when the embedding rank-1 hit has lexical support too
+  weak to ever route (`park-semantic`) — the paraphrase-duplicate class lexical routing misses by
+  construction (previously "0% semantic-only duplicate catch"). It never auto-patches on semantic
+  evidence alone. The full decision head is the pure `routeSkill()`, consumed by `reviewAndAuthor` and
+  measured by the eval so the benchmark cannot drift from shipped behavior. Fallback: without
+  `MM_NATIVE=passages`, a client, or on any passages error, routing is byte-identical to lexical-only.
+- **`npm run eval:routing`** (now part of `verify`) — a 16-case labeled routing eval across four classes
+  (strong-lexical dupes / paraphrase dupes / borderline corroboration / genuinely novel). Decision
+  quality vs class intent on this deliberately failure-weighted set: **lexical-only 7/16 (43.8%) →
+  hybrid 16/16 (100%)**, with zero regressions on the classes lexical already handled. Offline semantic
+  neighbors are hand-labeled fixtures standing in for `passages.search` rank order; embedding quality
+  itself is validated separately against a live Letta agent.
 - **n=1 CREATE gate** (`multiInstanceSupport`, wired into the reflect lane) — a reflect-lane CREATE must
   be topically grounded in an evidence signal observed **≥2 distinct instances** (count or conversation
   spread). The aggregate items floor was not enough: an n=1 repair could ride in on an unrelated recurring
