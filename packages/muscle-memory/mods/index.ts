@@ -38,10 +38,11 @@ import { GLOBAL_SKILLS, LOG_PATH, MM, MM_TAG, NEOCORTEX_BLOCK, OUTCOME_PATH, REC
 import { buildCrossConversationEvidence, classifyError, commandTemplate, correlateOutcomes, detect, detectAntiPatterns, detectInvocationGotchas, detectRepairChains, detectSequences, detectTemplates, fingerprint, impactScore, inferOutcomes, isDurableLesson, isValidSkillName, maturityScore, mergeOutcomes, stepSig } from "./detect";
 import { auditSkills, buildDiffFragment, candidateDescription, candidateName, crossShelfDuplicates, dedupCheck, draftSkillFromCandidate, draftWithRepair, effectivenessVerdict, findCandidate, lintSkillDraft, repairForCandidate, sotaQualityGaps } from "./gate";
 import { approveStagedPublish, catalogPrivacyScan, findSimilarSkills, liveSkillVisible, publishHardBlocks, publishMetadata, publishPlan, publishSkillToCatalog, publishTier, publishVisibilityReceipt, publishabilityScore, sanitizeForPublish, stageSanitizedPublish } from "./publish";
-import { Defense, ENGRAM, GuardMode, buildDefenses, buildNeocortexBlock, captureTagged, engramConsolidate, expectationFor, guardDecision, interleave, labileSkills, nativeEnabled, preActionDefense, predictionError, renderEngramDigest, replayQueue, reverseReplay, semanticSkillCandidates, skillRetrieved, syncNeocortexBlock, syncSkillPassages, tagExperience } from "./engram";
+import { Defense, ENGRAM, GuardMode, buildDefenses, buildNeocortexBlock, captureTagged, coachOnFailure, engramConsolidate, expectationFor, guardDecision, interleave, labileSkills, nativeEnabled, preActionDefense, predictionError, renderEngramDigest, replayQueue, reverseReplay, semanticSkillCandidates, skillRetrieved, syncNeocortexBlock, syncSkillPassages, tagExperience } from "./engram";
 import { CURATOR, aggregateTelemetry, buildRegistry, bumpUsage, churnSignal, coverageMap, curateManagedSkills, curatorPass, isPinned, lifecycleTransition, managedSkillUsage, restoreManagedSkill, retireManagedSkill, retiredSkillBlocker, runAutonomousPrune, setPinned, skillVerbs, specDrift } from "./lifecycle";
 import { AUTOPILOT_DEFAULT, AutopilotMode, REVIEW_PROMPT, SemanticFn, applySemanticEvidence, autopilotPlan, buildEvidenceManifest, executeAutopilotPlan, forkAuthor, graduateStagedSkill, isHighConfidenceCreate, loadHandledReflects, managedView, pickUpdateTarget, reflectSignature, retrievePreferences, reviewAndAuthor, runAutopilot, runReflectiveReview, searchSkills, streamChunkText } from "./autopilot";
 import { renderMuscleMemoryPanel, summarizeReflectActions } from "./ui";
+import { collectWins, renderWins } from "./wins";
 
 
 // Test hook (deterministic validation without live data).
@@ -58,8 +59,7 @@ export const __mm = { commandTemplate, fingerprint, redactFragment, buildDiffFra
   // v5 ENGRAM — CLS loop core (pure)
   ENGRAM, expectationFor, predictionError, tagExperience, captureTagged, skillRetrieved, labileSkills, replayQueue, reverseReplay, interleave, engramConsolidate, renderEngramDigest,
   guardDecision, buildNeocortexBlock, nativeEnabled, NEOCORTEX_BLOCK,
-  // E4 semantic routing (hybrid recall/precision)
-  applySemanticEvidence, semanticSkillCandidates, syncSkillPassages };
+  applySemanticEvidence, semanticSkillCandidates, syncSkillPassages, coachOnFailure, collectWins, renderWins };
 
 
 export default function activate(letta: any) {
@@ -96,11 +96,20 @@ export default function activate(letta: any) {
   }
 
   if (letta.capabilities?.events?.tools) {
+    // E5 REFLEX support: tool_end events don't carry args, so tool_start caches the computed
+    // step fingerprint by callId (bounded — reflex lookups are same-turn, never historical).
+    const stepByCallId = new Map<string, { tool: string; fp: string; tmpl: string | null }>();
+    const coachedOnce = new Set<string>(); // one coaching per conversation per trigger — never spam
     disposers.push(letta.events.on("tool_start", (event: any) => {
       try {
         const tool = String(event?.toolName ?? "");
         if (!tool) return;
         const { fp, tmpl } = fingerprint(tool, event?.args ?? {});
+        const callId = String(event?.toolCallId ?? "");
+        if (callId) {
+          stepByCallId.set(callId, { tool, fp, tmpl });
+          if (stepByCallId.size > 256) { const first = stepByCallId.keys().next().value; if (first !== undefined) stepByCallId.delete(first); }
+        }
         const cap = process.env.MM_CAPTURE;
         const fix = (cap === "worked" && (tool === "Edit" || tool === "Write" || tool === "fast_apply")) ? buildDiffFragment(event?.args ?? {}) : undefined;
         appendJsonl(LOG_PATH, { ts: Date.now(), conv: event?.conversationId ?? null, agent: event?.agentId ?? null, tool, fp, tmpl, h: hash(fp), id: event?.toolCallId ?? null, ...(fix ? { fix } : {}) });
@@ -114,20 +123,35 @@ export default function activate(letta: any) {
       return; // OBSERVE only — never transform args
     }));
 
-    // v2: OUTCOME CAPTURE via tool_end. Read-only on the result (never modify behavior);
-    // we persist only a boolean + a REDACTED error class keyed by call id.
+    // v2: OUTCOME CAPTURE via tool_end (read-only) + E5 REFLEX (opt-in MM_REFLEX=on): on a failure
+    // matching a learned repair chain, append the known fix to the failing tool's own output as a
+    // <system-reminder> — the model reads the recovery with the failure. Cache-safe (per-turn tool
+    // result, never a system-prompt edit). Everything else stays observe-only.
     try {
       disposers.push(letta.events.on("tool_end", (event: any) => {
+        let coached: { status: string; output: string } | null = null;
         try {
           // Real Letta tool_end contract (src/mods/types.ts): { status:"success"|"error", output }.
           const status = String(event?.status ?? "");
           const ok = status ? status === "success" : (event?.ok ?? !(event?.isError || event?.error));
-          const err = ok ? null : classifyError(event?.output ?? event?.resultText ?? event?.error ?? "", false);
+          const outText = String(event?.output ?? event?.resultText ?? event?.error ?? "");
+          const err = ok ? null : classifyError(outText, false);
           const cap = process.env.MM_CAPTURE;
-          const errMsg = (!ok && (cap === "context" || cap === "worked")) ? redactFragment(event?.output ?? event?.resultText ?? event?.error ?? "", 8, 320) : undefined;
+          const errMsg = (!ok && (cap === "context" || cap === "worked")) ? redactFragment(outText, 8, 320) : undefined;
           appendJsonl(OUTCOME_PATH, { ts: Date.now(), id: event?.toolCallId ?? null, tool: event?.toolName ?? null, conv: event?.conversationId ?? null, ok, err, ...(errMsg ? { errMsg } : {}) });
+          if (process.env.MM_REFLEX === "on" && !ok && defensesCache.length) {
+            const step = stepByCallId.get(String(event?.toolCallId ?? ""));
+            const c = step ? coachOnFailure(step, outText, defensesCache) : null;
+            const onceKey = c ? `${event?.conversationId ?? "?"}::${c.hit.trigger}` : "";
+            if (c && !coachedOnce.has(onceKey)) {
+              coachedOnce.add(onceKey);
+              appendJsonl(DEFENSE_HITS, { ts: Date.now(), conv: event?.conversationId ?? null, step: c.hit.trigger, kind: c.hit.kind, errClass: c.hit.errClass, defense: c.hit.defense, severity: c.hit.severity, surfaced: true });
+              appendUiEvent({ phase: "reflex_coached", summary: `🧠 reflex: surfaced known fix for '${c.hit.trigger.slice(0, 60)}'` });
+              coached = { status: status || "error", output: outText + c.reminder };
+            }
+          }
         } catch { /* best-effort */ }
-        return; // do NOT modify the tool result
+        return coached ? { result: coached } : undefined; // reflex-coached result, or untouched
       }));
     } catch { /* tool_end not available on this surface */ }
   }
@@ -245,6 +269,10 @@ export default function activate(letta: any) {
           const lines = events.map((e) => `💾 muscle-memory review: ${e.summary}`);
           return { type: "output", output: lines.join("\n") || "(no muscle-memory review events yet)" };
         }
+        if (sub === "wins") {
+          // The dopamine surface: receipt-backed value ledger (deterministic; no model, no new state).
+          return { type: "output", output: renderWins(collectWins()) };
+        }
         if (sub === "squad") {
           const feed = loadMeshFeed(10);
           return { type: "output", output: feed.length ? "💾 squad distillations (cross-agent):\n" + renderMeshFeed(feed).map((l) => `  ${l}`).join("\n") : "(no squad distillations yet — Mack + Kev appear here as they distill)" };
@@ -361,7 +389,7 @@ export default function activate(letta: any) {
           `mature candidates: ${candidates.length} (${templates.length} templates, ${sequences.length} sequences)`,
           cand || `  (none mature yet — need ≥${MM.MIN_COUNT}× across ≥${MM.MIN_CONVS} conversations)`,
           ``,
-          `commands: /muscle-memory [lifecycle|staged|coverage|engram|events|squad]`,
+          `commands: /muscle-memory [wins|lifecycle|staged|coverage|engram|events|squad]`,
         ].join("\n");
         return { type: "output", output: out };
       },

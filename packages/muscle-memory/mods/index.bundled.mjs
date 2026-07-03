@@ -1,6 +1,6 @@
 // mods/index.ts
-import { mkdirSync as mkdirSync5, readFileSync as readFileSync5, existsSync as existsSync5, writeFileSync as writeFileSync5, readdirSync as readdirSync3 } from "node:fs";
-import { join as join6 } from "node:path";
+import { mkdirSync as mkdirSync5, readFileSync as readFileSync6, existsSync as existsSync6, writeFileSync as writeFileSync5, readdirSync as readdirSync4 } from "node:fs";
+import { join as join7 } from "node:path";
 
 // mods/core.ts
 import { appendFileSync, mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, renameSync } from "node:fs";
@@ -1740,6 +1740,20 @@ function preActionDefense(stepSignature, defenses) {
   const s = stepSignature.toLowerCase();
   return defenses.find((d) => d.trigger.toLowerCase() === s) || defenses.find((d) => s.includes(d.trigger.toLowerCase()) && d.trigger.length > 3) || null;
 }
+function coachOnFailure(step, output, defenses) {
+  const hit = preActionDefense(stepSig({ tool: step.tool, fp: step.fp, tmpl: step.tmpl }), defenses);
+  if (!hit || hit.kind !== "fix" || hit.count < 2)
+    return null;
+  const errNow = classifyError(output, false);
+  if (errNow && hit.errClass && errNow !== hit.errClass)
+    return null;
+  return {
+    reminder: `
+
+<system-reminder>muscle-memory reflex: this step has failed exactly this way before and was recovered ${hit.count}× — known fix: ${hit.defense}. Apply that first; do not blind-retry.</system-reminder>`,
+    hit
+  };
+}
 var ENGRAM = {
   W_PE: 3,
   W_RW: 2,
@@ -2945,6 +2959,175 @@ function renderMuscleMemoryPanel(state) {
   }
 }
 
+// mods/wins.ts
+import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
+import { join as join6 } from "node:path";
+function readJsonl(path) {
+  if (!existsSync5(path))
+    return [];
+  const out = [];
+  for (const line of readFileSync5(path, "utf8").split(`
+`)) {
+    if (!line.trim())
+      continue;
+    try {
+      out.push(JSON.parse(line));
+    } catch {}
+  }
+  return out;
+}
+function num(o, k) {
+  if (o && typeof o === "object" && k in o) {
+    const v = Reflect.get(o, k);
+    if (typeof v === "number")
+      return v;
+  }
+  return null;
+}
+function str(o, k) {
+  if (o && typeof o === "object" && k in o) {
+    const v = Reflect.get(o, k);
+    if (typeof v === "string")
+      return v;
+  }
+  return "";
+}
+function collectWins(stateDir = STATE_DIR) {
+  const exp = readJsonl(join6(stateDir, "experience.jsonl"));
+  const convs = new Set;
+  let firstRepTs = null;
+  for (const r of exp) {
+    const c = str(r, "conv");
+    if (c)
+      convs.add(c);
+    const ts = num(r, "ts");
+    if (ts !== null && (firstRepTs === null || ts < firstRepTs))
+      firstRepTs = ts;
+  }
+  const sessions = new Set(readJsonl(join6(stateDir, "sessions.jsonl")).map((s) => str(s, "conv")).filter(Boolean));
+  for (const c of convs)
+    sessions.add(c);
+  const skillsEarned = [];
+  const updatesFolded = [];
+  const receiptsDir = join6(stateDir, "receipts");
+  if (existsSync5(receiptsDir)) {
+    for (const f of readdirSync3(receiptsDir)) {
+      if (!/^reflect-\d+\.json$/.test(f))
+        continue;
+      try {
+        const r = JSON.parse(readFileSync5(join6(receiptsDir, f), "utf8"));
+        const action = str(r, "action");
+        const name = str(r, "name");
+        const ts = num(r, "ts") ?? 0;
+        if (!name)
+          continue;
+        const graduated = !str(r, "dir").includes("staged");
+        if (action === "create")
+          skillsEarned.push({ name, action: "create", graduated, ts });
+        else if (action === "update")
+          updatesFolded.push({ name, action: "update", graduated, ts });
+      } catch {}
+    }
+  }
+  skillsEarned.sort((a, b) => b.ts - a.ts);
+  updatesFolded.sort((a, b) => b.ts - a.ts);
+  const hits = readJsonl(join6(stateDir, "defense-hits.jsonl"));
+  let knownFixSurfaced = 0;
+  let lastFlag = null;
+  for (const h of hits) {
+    if (str(h, "kind") === "fix")
+      knownFixSurfaced++;
+    const ts = num(h, "ts") ?? 0;
+    if (!lastFlag || ts > lastFlag.ts)
+      lastFlag = { step: str(h, "step"), errClass: str(h, "errClass"), defense: str(h, "defense"), ts };
+  }
+  let noiseRejected = 0;
+  for (const e of readJsonl(join6(stateDir, "ui-events.jsonl"))) {
+    if (str(e, "phase") !== "noise_rejected")
+      continue;
+    const m = str(e, "summary").match(/rejected (\d+)/);
+    noiseRejected += m ? Number(m[1]) : 1;
+  }
+  const skillUses = [];
+  const usagePath = join6(stateDir, "skill-usage.json");
+  if (existsSync5(usagePath)) {
+    try {
+      const u = JSON.parse(readFileSync5(usagePath, "utf8"));
+      if (u && typeof u === "object")
+        for (const [name, rec] of Object.entries(u)) {
+          const uses = num(rec, "uses") ?? (typeof rec === "number" ? rec : 0);
+          if (uses > 0)
+            skillUses.push({ name, uses });
+        }
+    } catch {}
+  }
+  skillUses.sort((a, b) => b.uses - a.uses);
+  const firstSkillTs = skillsEarned.length ? skillsEarned[skillsEarned.length - 1].ts : null;
+  return {
+    reps: exp.length,
+    sessions: sessions.size,
+    firstRepTs,
+    skillsEarned,
+    updatesFolded,
+    repeatsFlagged: hits.length,
+    knownFixSurfaced,
+    lastFlag,
+    noiseRejected,
+    skillUses: skillUses.slice(0, 5),
+    timeToFirstSkillMs: firstRepTs !== null && firstSkillTs !== null && firstSkillTs > firstRepTs ? firstSkillTs - firstRepTs : null
+  };
+}
+function ago(ms, now = Date.now()) {
+  const d = Math.max(0, now - ms);
+  if (d < 90000)
+    return "just now";
+  if (d < 90 * 60000)
+    return `${Math.round(d / 60000)}m ago`;
+  if (d < 36 * 3600000)
+    return `${Math.round(d / 3600000)}h ago`;
+  return `${Math.round(d / 86400000)}d ago`;
+}
+function span(ms) {
+  if (ms < 3600000)
+    return `${Math.max(1, Math.round(ms / 60000))} minutes`;
+  if (ms < 48 * 3600000)
+    return `${Math.round(ms / 3600000)} hours`;
+  return `${Math.round(ms / 86400000)} days`;
+}
+function renderWins(w, now = Date.now()) {
+  if (w.reps === 0)
+    return `\uD83D\uDCBE muscle-memory · wins
+(no reps observed yet — work a real session and check back)`;
+  const L = ["\uD83D\uDCBE muscle-memory · wins — what watching your work bought you", ""];
+  L.push(`  \uD83C\uDF9E  ${w.reps.toLocaleString()} reps watched across ${w.sessions} session${w.sessions === 1 ? "" : "s"}`);
+  if (w.skillsEarned.length) {
+    const grad = w.skillsEarned.filter((s) => s.graduated).length;
+    L.push(`  \uD83C\uDFC5 ${w.skillsEarned.length} skill${w.skillsEarned.length === 1 ? "" : "s"} earned from your own work (${grad} graduated, ${w.skillsEarned.length - grad} staged)`);
+    for (const s of w.skillsEarned.slice(0, 3))
+      L.push(`      · ${s.name} — ${ago(s.ts, now)}`);
+  }
+  if (w.updatesFolded.length)
+    L.push(`  \uD83E\uDDEC ${w.updatesFolded.length} lesson${w.updatesFolded.length === 1 ? "" : "s"} folded into existing skills instead of spawning duplicates`);
+  if (w.repeatsFlagged) {
+    L.push(`  \uD83D\uDEE1  ${w.repeatsFlagged} repeat-failure${w.repeatsFlagged === 1 ? "" : "s"} recognized before the tool ran${w.knownFixSurfaced ? ` (${w.knownFixSurfaced} with a known fix on file)` : ""}`);
+    if (w.lastFlag)
+      L.push(`      · last: ${w.lastFlag.step} → ${w.lastFlag.errClass} (${ago(w.lastFlag.ts, now)})`);
+  }
+  if (w.skillUses.length) {
+    const total = w.skillUses.reduce((a, s) => a + s.uses, 0);
+    L.push(`  \uD83D\uDCC8 learned skills invoked ${total}× — top: ${w.skillUses[0].name} (${w.skillUses[0].uses}×)`);
+  }
+  if (w.noiseRejected)
+    L.push(`  \uD83E\uDDF9 ${w.noiseRejected} env-noise item${w.noiseRejected === 1 ? "" : "s"} kept OUT of your skill library`);
+  if (w.timeToFirstSkillMs !== null)
+    L.push(`  ⏱  first rep → first earned skill: ${span(w.timeToFirstSkillMs)}`);
+  if (!w.skillsEarned.length && !w.updatesFolded.length)
+    L.push(`  \uD83C\uDF31 no skills earned yet — patterns need ≥2 sessions to mature (that's the taste, not a bug)`);
+  L.push("", "  every line above is backed by a receipt · /muscle-memory events");
+  return L.join(`
+`);
+}
+
 // mods/index.ts
 var __mm = {
   commandTemplate: commandTemplate2,
@@ -3061,12 +3244,15 @@ var __mm = {
   NEOCORTEX_BLOCK,
   applySemanticEvidence,
   semanticSkillCandidates,
-  syncSkillPassages
+  syncSkillPassages,
+  coachOnFailure,
+  collectWins,
+  renderWins
 };
 function activate(letta) {
   const disposers = [];
   let panel = null;
-  const DEFENSE_HITS = join6(STATE_DIR, "defense-hits.jsonl");
+  const DEFENSE_HITS = join7(STATE_DIR, "defense-hits.jsonl");
   let defensesCache = [];
   const refreshDefenses = () => {
     try {
@@ -3095,12 +3281,23 @@ function activate(letta) {
     }));
   }
   if (letta.capabilities?.events?.tools) {
+    const stepByCallId = new Map;
+    const coachedOnce = new Set;
     disposers.push(letta.events.on("tool_start", (event) => {
       try {
         const tool = String(event?.toolName ?? "");
         if (!tool)
           return;
         const { fp, tmpl } = fingerprint2(tool, event?.args ?? {});
+        const callId = String(event?.toolCallId ?? "");
+        if (callId) {
+          stepByCallId.set(callId, { tool, fp, tmpl });
+          if (stepByCallId.size > 256) {
+            const first = stepByCallId.keys().next().value;
+            if (first !== undefined)
+              stepByCallId.delete(first);
+          }
+        }
         const cap = process.env.MM_CAPTURE;
         const fix = cap === "worked" && (tool === "Edit" || tool === "Write" || tool === "fast_apply") ? buildDiffFragment(event?.args ?? {}) : undefined;
         appendJsonl(LOG_PATH, { ts: Date.now(), conv: event?.conversationId ?? null, agent: event?.agentId ?? null, tool, fp, tmpl, h: hash(fp), id: event?.toolCallId ?? null, ...fix ? { fix } : {} });
@@ -3116,15 +3313,28 @@ function activate(letta) {
     }));
     try {
       disposers.push(letta.events.on("tool_end", (event) => {
+        let coached = null;
         try {
           const status = String(event?.status ?? "");
           const ok = status ? status === "success" : event?.ok ?? !(event?.isError || event?.error);
-          const err = ok ? null : classifyError(event?.output ?? event?.resultText ?? event?.error ?? "", false);
+          const outText = String(event?.output ?? event?.resultText ?? event?.error ?? "");
+          const err = ok ? null : classifyError(outText, false);
           const cap = process.env.MM_CAPTURE;
-          const errMsg = !ok && (cap === "context" || cap === "worked") ? redactFragment(event?.output ?? event?.resultText ?? event?.error ?? "", 8, 320) : undefined;
+          const errMsg = !ok && (cap === "context" || cap === "worked") ? redactFragment(outText, 8, 320) : undefined;
           appendJsonl(OUTCOME_PATH, { ts: Date.now(), id: event?.toolCallId ?? null, tool: event?.toolName ?? null, conv: event?.conversationId ?? null, ok, err, ...errMsg ? { errMsg } : {} });
+          if (process.env.MM_REFLEX === "on" && !ok && defensesCache.length) {
+            const step = stepByCallId.get(String(event?.toolCallId ?? ""));
+            const c = step ? coachOnFailure(step, outText, defensesCache) : null;
+            const onceKey = c ? `${event?.conversationId ?? "?"}::${c.hit.trigger}` : "";
+            if (c && !coachedOnce.has(onceKey)) {
+              coachedOnce.add(onceKey);
+              appendJsonl(DEFENSE_HITS, { ts: Date.now(), conv: event?.conversationId ?? null, step: c.hit.trigger, kind: c.hit.kind, errClass: c.hit.errClass, defense: c.hit.defense, severity: c.hit.severity, surfaced: true });
+              appendUiEvent({ phase: "reflex_coached", summary: `\uD83E\uDDE0 reflex: surfaced known fix for '${c.hit.trigger.slice(0, 60)}'` });
+              coached = { status: status || "error", output: outText + c.reminder };
+            }
+          }
         } catch {}
-        return;
+        return coached ? { result: coached } : undefined;
       }));
     } catch {}
   }
@@ -3138,13 +3348,13 @@ function activate(letta) {
     disposers.push(letta.events.on("llm_end", (event) => {
       try {
         const started = spanByConv.get(String(event?.conversationId ?? "?")) ?? Date.now();
-        const span = { tokensIn: event?.usage?.promptTokens ?? event?.tokensIn, tokensOut: event?.usage?.completionTokens ?? event?.tokensOut, ms: Date.now() - started, stop: event?.stopReason };
+        const span2 = { tokensIn: event?.usage?.promptTokens ?? event?.tokensIn, tokensOut: event?.usage?.completionTokens ?? event?.tokensOut, ms: Date.now() - started, stop: event?.stopReason };
         let t = {};
         try {
-          if (existsSync5(TELEMETRY_PATH))
-            t = JSON.parse(readFileSync5(TELEMETRY_PATH, "utf8"));
+          if (existsSync6(TELEMETRY_PATH))
+            t = JSON.parse(readFileSync6(TELEMETRY_PATH, "utf8"));
         } catch {}
-        const agg = aggregateTelemetry([span]);
+        const agg = aggregateTelemetry([span2]);
         t.calls = (t.calls || 0) + agg.calls;
         t.tokensIn = (t.tokensIn || 0) + agg.tokensIn;
         t.tokensOut = (t.tokensOut || 0) + agg.tokensOut;
@@ -3162,14 +3372,14 @@ function activate(letta) {
         ensureDir();
         mkdirSync5(RECEIPTS_DIR, { recursive: true });
         const { candidates } = detect(loadExperience());
-        writeFileSync5(join6(RECEIPTS_DIR, `compact-${Date.now()}.json`), JSON.stringify({ phase: "start", conv: event?.conversationId ?? null, candidatesPreserved: candidates.length, ts: Date.now() }));
+        writeFileSync5(join7(RECEIPTS_DIR, `compact-${Date.now()}.json`), JSON.stringify({ phase: "start", conv: event?.conversationId ?? null, candidatesPreserved: candidates.length, ts: Date.now() }));
       } catch {}
     }));
     disposers.push(letta.events.on("compact_end", (event) => {
       try {
         ensureDir();
         mkdirSync5(RECEIPTS_DIR, { recursive: true });
-        writeFileSync5(join6(RECEIPTS_DIR, `compact-end-${Date.now()}.json`), JSON.stringify({ phase: "end", conv: event?.conversationId ?? null, trigger: event?.trigger ?? null, messagesBefore: event?.messagesBefore ?? null, messagesAfter: event?.messagesAfter ?? null, contextTokensBefore: event?.contextTokensBefore ?? null, contextTokensAfter: event?.contextTokensAfter ?? null, ts: Date.now() }));
+        writeFileSync5(join7(RECEIPTS_DIR, `compact-end-${Date.now()}.json`), JSON.stringify({ phase: "end", conv: event?.conversationId ?? null, trigger: event?.trigger ?? null, messagesBefore: event?.messagesBefore ?? null, messagesAfter: event?.messagesAfter ?? null, contextTokensBefore: event?.contextTokensBefore ?? null, contextTokensAfter: event?.contextTokensAfter ?? null, ts: Date.now() }));
       } catch {}
     }));
   }
@@ -3267,6 +3477,9 @@ function activate(letta) {
           return { type: "output", output: lines.join(`
 `) || "(no muscle-memory review events yet)" };
         }
+        if (sub === "wins") {
+          return { type: "output", output: renderWins(collectWins()) };
+        }
         if (sub === "squad") {
           const feed = loadMeshFeed(10);
           return { type: "output", output: feed.length ? `\uD83D\uDCBE squad distillations (cross-agent):
@@ -3276,7 +3489,7 @@ function activate(letta) {
         if (sub === "staged") {
           let s = [];
           try {
-            s = existsSync5(STAGED_DIR) ? readdirSync3(STAGED_DIR).filter((n) => existsSync5(join6(STAGED_DIR, n, "SKILL.md"))) : [];
+            s = existsSync6(STAGED_DIR) ? readdirSync4(STAGED_DIR).filter((n) => existsSync6(join7(STAGED_DIR, n, "SKILL.md"))) : [];
           } catch {}
           return { type: "output", output: s.length ? `staged skills (1-tap to graduate):
 ` + s.map((n) => `  · ${n}`).join(`
@@ -3400,7 +3613,7 @@ ${plan.digest}` };
           const reg = buildRegistry(dirs);
           let staged2 = [];
           try {
-            staged2 = existsSync5(STAGED_DIR) ? readdirSync3(STAGED_DIR).filter((n) => existsSync5(join6(STAGED_DIR, n, "SKILL.md"))) : [];
+            staged2 = existsSync6(STAGED_DIR) ? readdirSync4(STAGED_DIR).filter((n) => existsSync6(join7(STAGED_DIR, n, "SKILL.md"))) : [];
           } catch {}
           const used = reg.skills.filter((s) => s.uses > 0);
           const idle = reg.skills.filter((s) => s.uses === 0 && s.state !== "archived");
@@ -3442,7 +3655,7 @@ ${plan.digest}` };
                 managed++;
         } catch {}
         try {
-          staged = existsSync5(STAGED_DIR) ? readdirSync3(STAGED_DIR).filter((n) => existsSync5(join6(STAGED_DIR, n, "SKILL.md"))).length : 0;
+          staged = existsSync6(STAGED_DIR) ? readdirSync4(STAGED_DIR).filter((n) => existsSync6(join7(STAGED_DIR, n, "SKILL.md"))).length : 0;
         } catch {}
         const cov = (() => {
           try {
@@ -3469,7 +3682,7 @@ ${plan.digest}` };
           `mature candidates: ${candidates.length} (${templates.length} templates, ${sequences.length} sequences)`,
           cand || `  (none mature yet — need ≥${MM.MIN_COUNT}× across ≥${MM.MIN_CONVS} conversations)`,
           ``,
-          `commands: /muscle-memory [lifecycle|staged|coverage|engram|events|squad]`
+          `commands: /muscle-memory [wins|lifecycle|staged|coverage|engram|events|squad]`
         ].join(`
 `);
         return { type: "output", output: out };
@@ -3510,7 +3723,7 @@ ${plan.digest}` };
     const readRun = async (ctx) => {
       const a = ctx?.args || {};
       const dirs = scanDirs(ctx);
-      const findSkillDir = (name) => dirs.find((d) => existsSync5(join6(d, name, "SKILL.md")));
+      const findSkillDir = (name) => dirs.find((d) => existsSync6(join7(d, name, "SKILL.md")));
       try {
         if (a.action === "candidates") {
           const rows = loadExperience();
@@ -3535,8 +3748,8 @@ ${plan.digest}` };
         }
         if (a.action === "defense_hits") {
           const hits = [];
-          if (existsSync5(DEFENSE_HITS))
-            for (const l of readFileSync5(DEFENSE_HITS, "utf8").trim().split(`
+          if (existsSync6(DEFENSE_HITS))
+            for (const l of readFileSync6(DEFENSE_HITS, "utf8").trim().split(`
 `).slice(-20)) {
               if (l)
                 try {
@@ -3627,7 +3840,7 @@ ${d.body}` };
       const a = ctx?.args || {};
       const dir = agentSkillsDir(ctx);
       const dirs = scanDirs(ctx);
-      const findSkillDir = (name) => dirs.find((d) => existsSync5(join6(d, name, "SKILL.md")));
+      const findSkillDir = (name) => dirs.find((d) => existsSync6(join7(d, name, "SKILL.md")));
       try {
         if (a.action === "autopilot_run") {
           const cfg = { ...AUTOPILOT_DEFAULT, mode: a.mode === "auto" ? "auto" : "staged" };

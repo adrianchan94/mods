@@ -1,7 +1,7 @@
 // muscle-memory · engram module (split from index.ts — behavior-preserving).
 import { join } from "node:path";
 import { NEOCORTEX_BLOCK, Row } from "./core";
-import { HIGH_SIGNAL_TOOL_SET, detectAntiPatterns, detectInvocationGotchas, detectRepairChains, fingerprint, isValidSkillName, stepSig } from "./detect";
+import { HIGH_SIGNAL_TOOL_SET, classifyError, detectAntiPatterns, detectInvocationGotchas, detectRepairChains, fingerprint, isValidSkillName, stepSig } from "./detect";
 import { skillVerbs } from "./lifecycle";
 
 
@@ -21,6 +21,24 @@ export function buildDefenses(rows: Row[]): Defense[] {
 export function preActionDefense(stepSignature: string, defenses: Defense[]): Defense | null {
   const s = stepSignature.toLowerCase();
   return defenses.find((d) => d.trigger.toLowerCase() === s) || defenses.find((d) => s.includes(d.trigger.toLowerCase()) && d.trigger.length > 3) || null;
+}
+
+// ── E5 · THE REFLEX (opt-in MM_REFLEX=on) — scar tissue firing IN CONTEXT, not in a log.
+// When a tool FAILS and the step + error class match a learned repair chain, the known fix is
+// appended to the failing tool's own output as a <system-reminder>, so the model reads the
+// recovery in the same breath as the failure. Cache-safe by construction: tool-result content is
+// a per-turn message, never a system-prompt edit. Coaching is corroborated twice — the step
+// matches AND the current failure classifies like the learned one — so a step failing a NEW way
+// never gets stale advice. Only kind:"fix" (proven recoveries) coach; "avoid" stays MM_GUARD's job.
+export function coachOnFailure(step: { tool: string; fp: string; tmpl: string | null }, output: string, defenses: Defense[]): { reminder: string; hit: Defense } | null {
+  const hit = preActionDefense(stepSig({ tool: step.tool, fp: step.fp, tmpl: step.tmpl }), defenses);
+  if (!hit || hit.kind !== "fix" || hit.count < 2) return null;
+  const errNow = classifyError(output, false);
+  if (errNow && hit.errClass && errNow !== hit.errClass) return null;
+  return {
+    reminder: `\n\n<system-reminder>muscle-memory reflex: this step has failed exactly this way before and was recovered ${hit.count}× — known fix: ${hit.defense}. Apply that first; do not blind-retry.</system-reminder>`,
+    hit,
+  };
 }
 
 

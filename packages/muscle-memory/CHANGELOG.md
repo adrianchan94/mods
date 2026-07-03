@@ -5,6 +5,23 @@ All notable changes to `@letta-ai/muscle-memory`. Format loosely follows [Keep a
 ## [Unreleased]
 
 ### Added
+- **E5 · The Reflex (opt-in `MM_REFLEX=on`)** — learned scar tissue now fires **in context**, not in a
+  log. When a tool FAILS and both the step signature and the error class match a learned repair chain
+  (`coachOnFailure`, kind `fix`, observed ≥2×), the known fix is appended to the failing tool's own
+  output as a `<system-reminder>` — the model reads the recovery in the same breath as the failure.
+  Cache-safe by construction (per-turn tool-result content, never a system-prompt edit; grounded in
+  letta-code's `tool_end → {result}` override contract). Double-corroborated (step AND error class) so
+  a step failing a *new* way never gets stale advice; once per conversation per trigger; `avoid`-kind
+  defenses remain `MM_GUARD`'s job. Each coaching writes a `surfaced: true` defense-hit receipt.
+- **`/muscle-memory wins`** — the receipt-backed value ledger (`mods/wins.ts`): reps watched, skills
+  earned (graduated/staged split), lessons folded into existing skills, repeat-failures recognized
+  pre-action (with known-fix count), learned-skill invocations, env-noise kept out, and first-rep →
+  first-skill time. Deterministic arithmetic over receipts the lifecycle already writes — the surface
+  cannot claim anything a receipt doesn't back.
+- **`scripts/bench-compounding.ts`** — the with/without compounding proof: fresh agent EVERY session
+  in both arms; the only persistent artifact in the learning arm is muscle-memory's state + shelf
+  (surfaced to native project-skill discovery via `.agents/skills`). Ground truth re-verified by the
+  harness, never taken from model claims.
 - **E4 · Semantic routing (hybrid recall/precision, opt-in `MM_NATIVE=passages`)** — the managed-skill
   index is mirrored into Letta archival memory as `mm:skill`-tagged passages (`syncSkillPassages`,
   refreshed at `conversation_close`), and update-first routing gains an embedding-search recall lane

@@ -80,11 +80,21 @@ test("wiring: semantic-only dupe parks the autonomous CREATE before the author i
 test("wiring: a throwing semanticFn degrades to pure lexical routing (never blocks)", async () => {
   const shelf = shelfWith(["handling-broken-schema-changes", "Use when a database change script blows up mid-apply: inspect the failed step, repair the script, apply again."]);
   let authored = 0;
-  const res = await reviewAndAuthor(EVIDENCE, [shelf], async () => { authored++; return ""; }, {
+  // A VALID author draft makes the outcome deterministic regardless of host/suite state —
+  // asserting on the action of an EMPTY author leaned on the deterministic fallback, whose
+  // availability depends on whatever experience state other tests (or the host) left behind.
+  const DRAFT = [
+    "---", "name: recovering-from-visor-migration-failures",
+    "description: Use when a migration verifier fails with a stale-ledger error — read the verifier, repair the config epoch, re-run to confirm.",
+    "---", "## Procedure", "1. Read the exact error. 2. Repair the config. 3. Re-run the verifier.",
+    "## Pitfalls", "### 1. Blind retry", "TELL: identical error twice. Fix the config first.",
+    "## Verification", "- Verifier exits 0.",
+  ].join("\n");
+  const res = await reviewAndAuthor(EVIDENCE, [shelf], async () => { authored++; return DRAFT; }, {
     semanticFn: async () => { throw new Error("server down"); },
   });
-  expect(authored).toBeGreaterThan(0); // routing survived; the (empty) author ran → graceful-degradation lane
-  expect(res.action).not.toBe("reject");
+  expect(authored).toBeGreaterThan(0); // routing survived the throwing semantic lane; the author ran
+  expect(res.action).toBe("create");   // and the pure-lexical route completed end to end
 });
 
 // ── passage index primitives ────────────────────────────────────────────────────────────────
